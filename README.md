@@ -585,3 +585,19 @@ docker compose exec manager docker swarm init
 ![Initialisation du cluster Swarm](screenshots/td2-03-swarm-init.png)
 
 Le conteneur `manager` devient le **manager** du cluster.<br/> Docker affiche la commande `docker swarm join` avec le **token** (`SWMTKN-1-…`) que les nœuds doivent utiliser pour rejoindre le cluster, et l'adresse du manager sur le port `2377`.
+
+### 2.3 Faire rejoindre les nœuds
+
+```bash
+TOKEN=$(docker compose exec manager docker swarm join-token -q worker)
+docker compose exec node1 docker swarm join --token $TOKEN manager:2377
+docker compose exec node2 docker swarm join --token $TOKEN manager:2377
+docker compose exec node3 docker swarm join --token $TOKEN manager:2377
+```
+
+- `join-token -q worker` : récupère le token des workers dans la variable `TOKEN`, sans le recopier à la main.
+- `manager:2377` : les nœuds joignent le manager par le **nom de son service** dans `compose.yml`, et non par son adresse IP.
+
+![Les 3 nœuds rejoignent le cluster](screenshots/td2-04-swarm-join.png)
+
+Chaque nœud affiche `This node joined a swarm as a worker.` : `node1`, `node2` et `node3` font maintenant partie du cluster en tant que **workers**.
