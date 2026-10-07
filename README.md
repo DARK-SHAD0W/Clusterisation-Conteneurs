@@ -574,3 +574,14 @@ docker compose exec node1 docker ps
 ![docker ps dans le manager et dans node1](screenshots/td2-02-dind-docker-ps.png)
 
 `docker ps` répond dans le manager et dans `node1`, avec une liste **vide** : chaque conteneur a bien son propre Docker, séparé de celui de la machine.<br/> Les conteneurs de l'application, visibles sur la machine, n'y apparaissent pas.
+
+
+### 2.2 Initialiser le cluster
+
+```bash
+docker compose exec manager docker swarm init
+```
+
+![Initialisation du cluster Swarm](screenshots/td2-03-swarm-init.png)
+
+Le conteneur `manager` devient le **manager** du cluster.<br/> Docker affiche la commande `docker swarm join` avec le **token** (`SWMTKN-1-…`) que les nœuds doivent utiliser pour rejoindre le cluster, et l'adresse du manager sur le port `2377`.
