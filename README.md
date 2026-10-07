@@ -527,3 +527,50 @@ docker images
 ```
 
 # TD2
+
+**Objectif :** créer un cluster Docker Swarm en local. Chaque « machine » du cluster est un conteneur **Docker-in-Docker** (DinD) : un conteneur qui contient son propre Docker.
+
+## Prérequis : images publiées sur un registry
+
+Les machines du cluster ne peuvent pas construire les images (`build:` n'est pas pris en charge par Swarm) : elles doivent les **télécharger** depuis un registry.
+
+Deux workflows GitHub Actions (`.github/workflows/build.server.yml` et `build.client.yml`) construisent les images du serveur et du client à chaque push sur `main`, puis les publient sur le registry de GitHub (**GHCR**) :
+
+```
+ghcr.io/dark-shad0w/clusterisation-conteneurs/server:latest
+ghcr.io/dark-shad0w/clusterisation-conteneurs/client:latest
+```
+
+Les deux images sont publiques : elles peuvent être téléchargées sans se connecter.
+
+![Images publiées sur GHCR](screenshots/td2-00-ghcr-packages.png)
+
+## Exercice 2 : création du cluster Docker Swarm
+
+### 2.1 Lancer les 4 machines
+
+Fichier `swarm/compose.yml` : 1 conteneur `manager` et 3 conteneurs `node1`, `node2`, `node3`, tous basés sur l'image `docker:dind`.
+
+- `privileged: true` : obligatoire pour faire tourner Docker dans un conteneur. Cette option retire l'isolation du conteneur .
+- `hostname` : donne un nom lisible à chaque machine (il apparaîtra dans la liste des nœuds du cluster).
+
+```bash
+cd swarm
+docker compose up -d
+docker ps
+```
+
+![Lancement des 4 conteneurs DinD](screenshots/td2-01-dind-up.png)
+
+Les 4 conteneurs `swarm-manager-1`, `swarm-node1-1`, `swarm-node2-1` et `swarm-node3-1` sont démarrés (`Up`), à côté des conteneurs de l'application lancés au TD1.
+
+On vérifie ensuite que Docker fonctionne **à l'intérieur** des conteneurs :
+
+```bash
+docker compose exec manager docker ps
+docker compose exec node1 docker ps
+```
+
+![docker ps dans le manager et dans node1](screenshots/td2-02-dind-docker-ps.png)
+
+`docker ps` répond dans le manager et dans `node1`, avec une liste **vide** : chaque conteneur a bien son propre Docker, séparé de celui de la machine.<br/> Les conteneurs de l'application, visibles sur la machine, n'y apparaissent pas.

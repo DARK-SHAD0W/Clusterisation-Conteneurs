@@ -1,0 +1,23 @@
+# Local Docker Swarm cluster: each "machine" is a Docker-in-Docker container
+name: swarm
+
+services:
+  manager:
+    image: docker:dind
+    hostname: manager
+    privileged: true
+
+  node1:
+    image: docker:dind
+    hostname: node1
+    privileged: true
+
+  node2:
+    image: docker:dind
+    hostname: node2
+    privileged: true
+
+  node3:
+    image: docker:dind
+    hostname: node3
+    privileged: true
