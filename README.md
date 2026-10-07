@@ -159,7 +159,7 @@ Utilisateur de test : **ahmed test 1**, email `ahmedtest@gmail.com`, mot de pass
 Fichier `server/Dockerfile` :
 
 ```dockerfile
-FROM node:22
+FROM node:24-alpine3.24
 
 WORKDIR /app
 
@@ -174,6 +174,8 @@ EXPOSE 3000
 
 CMD ["yarn", "start"]
 ```
+
+> Les captures de cette étape ont été faites avec l'image `node:22`. Elle a ensuite été remplacée par `node:24-alpine3.24`, une image Node.js plus récente et plus légère (basée sur Alpine Linux).
 
 - On copie d'abord `package.json` et `yarn.lock`, puis on installe les dépendances. Tant que ces deux fichiers ne changent pas, Docker réutilise cette étape depuis son cache : les reconstructions sont rapides.
 - On copie ensuite uniquement le code utile (`src` et `tsconfig.json`), plutôt qu'un `COPY . .`.
@@ -195,6 +197,8 @@ database: process.env.DB_NAME || "postgres",
 ```
 
 Sans Docker, rien ne change (`yarn dev` fonctionne toujours). Dans Docker, on indique au serveur le nom du conteneur de la base avec `DB_HOST`.
+
+> Ces variables ont ensuite été retirées au passage à Docker Compose : voir [4.4](#44-simplification-de-la-connexion-à-la-base).
 
 ### 2.3 Lancer la base et le serveur
 
@@ -269,14 +273,16 @@ La connexion réussit : le serveur, lancé dans Docker, lit bien l'utilisateur e
 Fichier `client/Dockerfile` :
 
 ```dockerfile
-FROM node:22
+FROM node:24-alpine3.24
 
 WORKDIR /app
 
-COPY package.json yarn.lock ./
+COPY package*.json yarn.lock ./
 RUN yarn install --frozen-lockfile
 
-COPY index.html vite.config.ts tsconfig.json tsconfig.app.json tsconfig.node.json ./
+COPY tsconfig*.json ./
+COPY vite.config.ts ./
+COPY index.html ./
 COPY public public
 COPY src src
 
@@ -284,6 +290,8 @@ EXPOSE 5173
 
 CMD ["yarn", "dev", "--host"]
 ```
+
+> Comme pour le serveur, les captures de cette étape ont été faites avec `node:22`, remplacée ensuite par `node:24-alpine3.24`.
 
 - Même principe que pour le serveur : les dépendances d'abord (mises en cache), puis uniquement les fichiers utiles.
 - Le client est lancé avec le serveur de développement Vite, sur le port `5173`.
@@ -341,13 +349,12 @@ On ouvre `http://localhost:5173`, puis on se connecte avec l'utilisateur de test
 
 ### 4.1 Le fichier `compose.yml`
 
-Fichier `compose.yml`, à la racine du dépôt :
-Chaque bloc de `services` remplace une commande `docker run` :
+Le fichier `compose.yml` se trouve à la racine du dépôt. Chaque bloc de `services` remplace une commande `docker run` :
 
 | Service | Remplace | Points clés |
 |---|---|---|
-| `db` | `docker run ... postgres:17` | même mot de passe que celui attendu par le serveur |
-| `server` | `docker build` + `docker run ... mfp-server` | `DB_HOST: db` : la base est jointe par le **nom du service** |
+| `db` | `docker run ... postgres:17` | même utilisateur (`POSTGRES_USER`) et mot de passe que ceux attendus par le serveur ; port `5432` publié sur la machine |
+| `server` | `docker build` + `docker run ... mfp-server` | joint la base par le **nom du service** `db` (voir [4.4](#44-simplification-de-la-connexion-à-la-base)) |
 | `client` | `docker build` + `docker run ... mfp-client` | `API_URL: http://server:3000` : le serveur est joint par le nom du service |
 
 - **Réseau :** plus besoin de `docker network create`. Compose crée automatiquement un réseau commun à tous les services, et chaque service y est joignable par son nom (`db`, `server`, `client`).
@@ -391,3 +398,16 @@ La base est neuve (nouveau volume) : on crée l'utilisateur avec Bruno (**01 - C
 ![Client lancé avec Compose](screenshots/td1-10-compose-browser.png)
 
 Pour tout arrêter : `docker compose down` (le volume `db-data` est conservé, les données aussi).
+
+### 4.4 Simplification de la connexion à la base
+
+Avec Compose, la base s'appelle toujours `db` : c'est le nom de son service. Les variables d'environnement de l'étape 2 ne sont donc plus nécessaires, et l'adresse de la base est écrite directement dans `server/src/datasource.ts` :
+
+```ts
+host: "db",
+username: "postgres",
+password: "supersecret",
+database: "postgres",
+```
+
+Conséquence : le serveur ne fonctionne plus que **dans Compose**, là où le nom `db` existe. Les commandes manuelles de l'étape 2 (base nommée `mfp-db`) et le `yarn dev` de l'étape 1 (base sur `localhost`) ne peuvent plus se connecter à la base telles quelles.
