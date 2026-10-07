@@ -1,12 +1,15 @@
-FROM node:22
+FROM node:24-alpine3.24
 
 WORKDIR /app
 
 # dependencies first so this layer stays cached until package.json / yarn.lock change
-COPY package.json yarn.lock ./
+COPY package*.json yarn.lock ./
 RUN yarn install --frozen-lockfile
 
-COPY index.html vite.config.ts tsconfig.json tsconfig.app.json tsconfig.node.json ./
+
+COPY tsconfig*.json ./
+COPY vite.config.ts ./
+COPY index.html ./
 COPY public public
 COPY src src
 

@@ -11,6 +11,7 @@ Ce README documente **toute la démarche, étape par étape**.
 1. [Test initial avec Bruno](#1-test-initial-avec-bruno)
 2. [Dockerisation du serveur](#2-dockerisation-du-serveur)
 3. [Dockerisation du client](#3-dockerisation-du-client)
+4. [Orchestration avec Docker Compose](#4-orchestration-avec-docker-compose)
 
 ## Structure du dépôt
 
@@ -18,6 +19,7 @@ Ce README documente **toute la démarche, étape par étape**.
 .
 ├── client/                          # application React (Vite)
 ├── server/                          # API Node.js / Express / TypeORM
+├── compose.yml                      # lance la base, le serveur et le client ensemble
 ├── mfp-bruno-api-test-collection/   # collection Bruno pour tester l'API
 └── screenshots/                     # captures d'écran des tests
 ```
@@ -330,3 +332,62 @@ docker logs mfp-client
 On ouvre `http://localhost:5173`, puis on se connecte avec l'utilisateur de test (`ahmedtest@gmail.com` / `azerty123`).
 
 ![Client dans le navigateur](screenshots/td1-08-client-browser.png)
+
+---
+
+## 4. Orchestration avec Docker Compose
+
+**Objectif (TD1, étape 3) :** remplacer toutes les commandes `docker network` et `docker run` des étapes 2 et 3 par un seul fichier, et lancer toute l'application avec une seule commande.
+
+### 4.1 Le fichier `compose.yml`
+
+Fichier `compose.yml`, à la racine du dépôt :
+Chaque bloc de `services` remplace une commande `docker run` :
+
+| Service | Remplace | Points clés |
+|---|---|---|
+| `db` | `docker run ... postgres:17` | même mot de passe que celui attendu par le serveur |
+| `server` | `docker build` + `docker run ... mfp-server` | `DB_HOST: db` : la base est jointe par le **nom du service** |
+| `client` | `docker build` + `docker run ... mfp-client` | `API_URL: http://server:3000` : le serveur est joint par le nom du service |
+
+- **Réseau :** plus besoin de `docker network create`. Compose crée automatiquement un réseau commun à tous les services, et chaque service y est joignable par son nom (`db`, `server`, `client`).
+- **Volume `db-data` :** les données de la base sont stockées dans un volume Docker. Elles sont conservées même si le conteneur `db` est supprimé et recréé.
+- **`depends_on` :** Compose démarre les services dans l'ordre `db` → `server` → `client`.
+- **`healthcheck` sur `db` :** toutes les 2 secondes, Docker lance `pg_isready` dans le conteneur pour savoir si PostgreSQL accepte les connexions. Le serveur, avec `condition: service_healthy`, attend que la base soit **prête** avant de démarrer.
+
+### 4.2 Lancer l'application
+
+On supprime d'abord les conteneurs et le réseau créés à la main aux étapes 2 et 3 (sinon les ports 3000 et 5173 sont déjà occupés) :
+
+```bash
+docker rm -f mfp-client mfp-server mfp-db
+docker network rm mfp-net
+```
+
+Puis on lance tout avec Compose :
+
+```bash
+docker compose up -d --build
+docker compose ps
+docker compose logs server
+```
+
+- `up` : crée le réseau, le volume et les 3 conteneurs, puis les démarre.
+- `-d` : en arrière-plan.
+- `--build` : construit (ou reconstruit) les images du serveur et du client.
+
+> **Problème rencontré :** au premier essai, avec un simple `depends_on: - db`, le serveur s'arrêtait aussitôt avec `unable to connect to db: connect ECONNREFUSED`.
+> <br/>`depends_on` attend seulement que le conteneur de la base soit **démarré**, pas que PostgreSQL soit **prêt** : le serveur essayait de se connecter trop tôt.
+> <br/>**Solution :** ajouter le `healthcheck` sur `db` et `condition: service_healthy` sur `server` (voir 4.1). On voit alors `mfp-db-1 Waiting` puis `Healthy` avant que le serveur démarre.
+
+`docker compose ps` doit afficher les 3 services avec le statut `Up` (et `healthy` pour `db`), et les logs du serveur doivent afficher `connected to PgSQL db` puis `server started on port 3000`.
+
+![Lancement avec docker compose](screenshots/td1-09-compose-up.png)
+
+### 4.3 Test
+
+La base est neuve (nouveau volume) : on crée l'utilisateur avec Bruno (**01 - Create user**), puis on se connecte dans le navigateur sur `http://localhost:5173` avec `ahmedtest@gmail.com` / `azerty123`.
+
+![Client lancé avec Compose](screenshots/td1-10-compose-browser.png)
+
+Pour tout arrêter : `docker compose down` (le volume `db-data` est conservé, les données aussi).

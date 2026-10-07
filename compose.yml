@@ -1,0 +1,39 @@
+name: mfp
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: supersecret
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  server:
+    build: ./server
+    environment:
+      DB_HOST: db
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  client:
+    build: ./client
+    environment:
+      API_URL: http://server:3000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - server
+
+volumes:
+  db-data:
