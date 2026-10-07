@@ -617,3 +617,48 @@ exit
 Le cluster compte bien **4 nœuds**, tous `Ready` et `Active` :
 - `manager` est le **Leader** : c'est lui qui gère le cluster. L'étoile `*` indique le nœud sur lequel la commande est lancée.
 - `node1`, `node2` et `node3` n'ont pas de statut de manager : ce sont des **workers**, qui exécutent les conteneurs.
+
+## Exercice 3 : tests du cluster
+
+### 3.1 Créer une stack `hello-world`
+
+Fichier `swarm/hello-world.compose.yml` :
+
+```yaml
+services:
+  hello:
+    image: hello-world
+    deploy:
+      replicas: 2
+```
+
+- Une **stack** est un fichier au même format que Docker Compose, déployé sur un cluster Swarm avec `docker stack deploy`.
+- La clause `deploy` est propre à Swarm : `replicas: 2` demande au cluster de lancer **2 copies** du conteneur `hello-world`, réparties sur les nœuds.
+
+### 3.2 Copier la stack dans le manager
+
+On ajoute d'abord un **volume anonyme** sur `/home/manager` au service `manager`, dans `swarm/compose.yml`, pour que les fichiers de ce dossier soient conservés si le conteneur est recréé :
+
+```yaml
+  manager:
+    image: docker:dind
+    hostname: manager
+    privileged: true
+    volumes:
+      - /home/manager
+```
+
+Puis on recrée le manager, on vérifie que le cluster est intact, et on copie la stack dans `/home/manager` :
+
+```bash
+docker compose up -d manager
+docker compose exec manager docker node ls
+docker compose exec manager mkdir -p /home/manager
+docker compose cp hello-world.compose.yml manager:/home/manager/
+docker compose exec manager ls /home/manager
+```
+
+![Copie de la stack dans le manager](screenshots/td2-06-stack-copy.png)
+
+- Après la recréation du manager, `docker node ls` affiche toujours les 4 nœuds `Ready` : le cluster n'a pas été perdu.
+- `docker compose cp` copie le fichier de la machine vers le conteneur, et `ls` confirme que `hello-world.compose.yml` est bien dans `/home/manager`.

@@ -6,6 +6,8 @@ services:
     image: docker:dind
     hostname: manager
     privileged: true
+    volumes:
+      - /home/manager
 
   node1:
     image: docker:dind
