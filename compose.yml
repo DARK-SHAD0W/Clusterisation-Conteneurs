@@ -20,8 +20,6 @@ services:
   server:
     build: ./server
     restart: unless-stopped
-    environment:
-      DB_HOST: db
     ports:
       - "3000:3000"
     depends_on:

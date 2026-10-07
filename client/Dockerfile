@@ -23,4 +23,4 @@ FROM nginx:1.29-alpine AS main
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-EXPOSE 5731
+EXPOSE 5173

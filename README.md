@@ -12,6 +12,8 @@ Ce README documente **toute la démarche, étape par étape**.
 2. [Dockerisation du serveur](#2-dockerisation-du-serveur)
 3. [Dockerisation du client](#3-dockerisation-du-client)
 4. [Orchestration avec Docker Compose](#4-orchestration-avec-docker-compose)
+5. [Communication entre les services](#5-communication-entre-les-services)
+6. [Démarrage, redémarrage et images légères](#6-démarrage-redémarrage-et-images-légères)
 
 ## Structure du dépôt
 
@@ -176,6 +178,7 @@ CMD ["yarn", "start"]
 ```
 
 > Les captures de cette étape ont été faites avec l'image `node:22`. Elle a ensuite été remplacée par `node:24-alpine3.24`, une image Node.js plus récente et plus légère (basée sur Alpine Linux).
+> <br/>Ce Dockerfile a ensuite été découpé en 3 étapes pour alléger l'image : voir [6.3](#63-alléger-les-images).
 
 - On copie d'abord `package.json` et `yarn.lock`, puis on installe les dépendances. Tant que ces deux fichiers ne changent pas, Docker réutilise cette étape depuis son cache : les reconstructions sont rapides.
 - On copie ensuite uniquement le code utile (`src` et `tsconfig.json`), plutôt qu'un `COPY . .`.
@@ -292,6 +295,7 @@ CMD ["yarn", "dev", "--host"]
 ```
 
 > Comme pour le serveur, les captures de cette étape ont été faites avec `node:22`, remplacée ensuite par `node:24-alpine3.24`.
+> <br/>Ce Dockerfile a ensuite été remplacé par une version en 3 étapes, où le client est servi par **nginx** au lieu de Vite : voir [6.3](#63-alléger-les-images).
 
 - Même principe que pour le serveur : les dépendances d'abord (mises en cache), puis uniquement les fichiers utiles.
 - Le client est lancé avec le serveur de développement Vite, sur le port `5173`.
@@ -308,6 +312,8 @@ L'adresse est maintenant lue dans une variable d'environnement, avec l'ancienne 
 ```ts
 target: process.env.API_URL || "http://localhost:3000",
 ```
+
+> Cette variable a ensuite été retirée : dans Docker, c'est maintenant nginx qui redirige les appels `/api` vers le serveur (voir [6.3](#63-alléger-les-images)). Dans `vite.config.ts`, l'adresse est maintenant `http://server:3000` : comme pour la base (`db`), le serveur est désigné par le nom de son service Compose.
 
 ### 3.3 Lancer le client
 
@@ -355,7 +361,7 @@ Le fichier `compose.yml` se trouve à la racine du dépôt. Chaque bloc de `serv
 |---|---|---|
 | `db` | `docker run ... postgres:17` | même utilisateur (`POSTGRES_USER`) et mot de passe que ceux attendus par le serveur ; port `5432` publié sur la machine |
 | `server` | `docker build` + `docker run ... mfp-server` | joint la base par le **nom du service** `db` (voir [4.4](#44-simplification-de-la-connexion-à-la-base)) |
-| `client` | `docker build` + `docker run ... mfp-client` | `API_URL: http://server:3000` : le serveur est joint par le nom du service |
+| `client` | `docker build` + `docker run ... mfp-client` | port `5173` publié ; les appels `/api` sont transmis au service `server` (voir [5](#5-communication-entre-les-services)) |
 
 - **Réseau :** plus besoin de `docker network create`. Compose crée automatiquement un réseau commun à tous les services, et chaque service y est joignable par son nom (`db`, `server`, `client`).
 - **Volume `db-data` :** les données de la base sont stockées dans un volume Docker. Elles sont conservées même si le conteneur `db` est supprimé et recréé.
@@ -411,3 +417,110 @@ database: "postgres",
 ```
 
 Conséquence : le serveur ne fonctionne plus que **dans Compose**, là où le nom `db` existe. Les commandes manuelles de l'étape 2 (base nommée `mfp-db`) et le `yarn dev` de l'étape 1 (base sur `localhost`) ne peuvent plus se connecter à la base telles quelles.
+
+---
+
+## 5. Communication entre les services
+
+**Question (TD1, étape 5) :** comment communiquent la base et le serveur ? Et le serveur et le front ?
+
+```
+ Machine (Windows / WSL)                 Réseau Docker « mfp_default »
+ ┌──────────────────────┐              ┌───────────────────────────────────────────────┐
+ │ Navigateur ──────────┼─ :5173 ─────►│ client (nginx) ── /api ──► server ──► db       │
+ │                      │              │                           :3000      :5432    │
+ │ Bruno ───────────────┼─ :3000 ─────►│                           server              │
+ └──────────────────────┘              └───────────────────────────────────────────────┘
+```
+
+**Base ↔ serveur**
+- Les deux conteneurs sont sur le même réseau, créé par Compose.
+- Le serveur joint la base par le **nom du service** `db`, sur le port `5432` de PostgreSQL. Docker traduit ce nom en adresse du conteneur.
+- La base n'a pas besoin d'être visible depuis la machine pour que le serveur lui parle. Le port `5432` est publié uniquement pour pouvoir s'y connecter depuis la machine si besoin.
+
+**Front ↔ serveur**
+- Le code React tourne **dans le navigateur**, donc sur la machine, en dehors du réseau Docker : il ne connaît pas le nom `server`.
+- Le navigateur appelle donc l'API sur la même adresse que le site, `http://localhost:5173/api/...`.
+- C'est le conteneur `client` qui transmet ces appels `/api` au service `server`, par le réseau Docker (d'abord avec Vite, puis avec nginx).
+- Bruno, lui, appelle directement le serveur sur `http://localhost:3000`, grâce au port `3000` publié.
+
+---
+
+## 6. Démarrage, redémarrage et images légères
+
+**Objectif (TD2) :** fiabiliser le démarrage, redémarrer automatiquement les services et alléger les images Docker.
+
+### 6.1 Démarrer le serveur seulement quand la base est prête
+
+Déjà fait à l'étape 4 : le `healthcheck` sur `db` et `condition: service_healthy` sur `server` (voir [4.1](#41-le-fichier-composeyml) et le problème rencontré en [4.2](#42-lancer-lapplication)).
+
+### 6.2 Redémarrage automatique
+
+Dans `compose.yml`, chaque service a maintenant :
+
+```yaml
+restart: unless-stopped
+```
+
+- Si un service s'arrête tout seul (plantage), Docker le **redémarre automatiquement**.
+- Si on l'arrête **à la main** (`docker compose stop`), il reste arrêté.
+
+Test : on simule un plantage du serveur en arrêtant son processus Node, puis on regarde combien de fois Docker l'a redémarré.
+
+```bash
+docker compose exec server pkill -f "node dist/index.js"
+docker inspect mfp-server-1 --format 'status={{.State.Status}} restarts={{.RestartCount}}'
+# status=running restarts=1
+
+docker compose stop server
+docker inspect mfp-server-1 --format 'status={{.State.Status}} restarts={{.RestartCount}}'
+# status=exited restarts=1   (arrêt manuel : pas de redémarrage)
+
+docker compose start server
+```
+### 6.3 Alléger les images
+
+Les Dockerfiles sont découpés en **3 étapes** (*multi-stage build*). Seule la dernière étape devient l'image finale : tout ce qui sert uniquement à construire l'application (outils de compilation, dépendances de développement, code source TypeScript) reste dans les étapes intermédiaires.
+
+| Étape | Rôle |
+|---|---|
+| `deps` | installe toutes les dépendances |
+| `builder` | construit l'application (`yarn build`) |
+| `main` | image finale : seulement ce qui est utile pour lancer l'application |
+
+**Serveur** (`server/Dockerfile`) : l'image finale contient le JavaScript compilé (`dist`) et uniquement les dépendances de production (`--production`).
+
+**Client** (`client/Dockerfile`) : `yarn build` transforme l'application React en simples fichiers HTML, CSS et JavaScript. L'image finale n'a plus besoin de Node.js : un serveur web **nginx** suffit pour envoyer ces fichiers au navigateur.
+
+La configuration de nginx est dans le fichier `client/nginx.conf`, copié dans l'image :
+
+```nginx
+server {
+    listen 5173;
+    root /usr/share/nginx/html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://server:3000;
+    }
+}
+```
+
+- `listen 5173` : nginx écoute sur le même port qu'avant, l'adresse du site ne change pas (`http://localhost:5173`).
+- `location /` : envoie les fichiers du site. Pour une page comme `/dashboard`, qui n'existe pas en tant que fichier, nginx renvoie `index.html` et React affiche la bonne page.
+- `location /api/` : transmet les appels à l'API au service `server`. C'est ce qui remplace le proxy de Vite.
+
+**Résultat :**
+
+| Image | Avant | Après |
+|---|---|---|
+| `mfp-server` | 477 Mo | **337 Mo** (−140 Mo) |
+| `mfp-client` | 1,49 Go | **93 Mo** |
+
+```bash
+docker compose up -d --build
+docker images
+```
