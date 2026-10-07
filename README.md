@@ -601,3 +601,19 @@ docker compose exec node3 docker swarm join --token $TOKEN manager:2377
 ![Les 3 nœuds rejoignent le cluster](screenshots/td2-04-swarm-join.png)
 
 Chaque nœud affiche `This node joined a swarm as a worker.` : `node1`, `node2` et `node3` font maintenant partie du cluster en tant que **workers**.
+
+### 2.4 Lister les nœuds du cluster
+
+On entre dans le conteneur `manager`, puis on affiche les nœuds du cluster :
+
+```bash
+docker compose exec manager ash
+docker node ls
+exit
+```
+
+![Liste des nœuds du cluster](screenshots/td2-05-node-ls.png)
+
+Le cluster compte bien **4 nœuds**, tous `Ready` et `Active` :
+- `manager` est le **Leader** : c'est lui qui gère le cluster. L'étoile `*` indique le nœud sur lequel la commande est lancée.
+- `node1`, `node2` et `node3` n'ont pas de statut de manager : ce sont des **workers**, qui exécutent les conteneurs.
