@@ -1,0 +1,40 @@
+info:
+  name: 02 - Login (get token)
+  type: http
+  seq: 2
+
+http:
+  method: POST
+  url: http://localhost:3000/api/users/tokens
+  headers:
+    - name: Content-Type
+      value: application/json
+  body:
+    type: json
+    data: |-
+      {
+        "email": "ahmedtest@gmail.com",
+        "password": "azerty123"
+      }
+runtime:
+  scripts:
+    - type: after-response
+      code: |-
+        // save the JWT into {{token}} so the next requests can use it
+        if (res.body && res.body.token) {
+          bru.setVar("token", res.body.token);
+        }
+    - type: tests
+      code: |-
+        test("status 200", function () {
+          expect(res.status).to.equal(200);
+        });
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: true
+
+docs: |-
+  Logs in "ahmed test 1" and returns a JWT. The after-response script stores it in {{token}}.

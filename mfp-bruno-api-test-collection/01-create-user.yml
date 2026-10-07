@@ -1,0 +1,35 @@
+info:
+  name: 01 - Create user
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: http://localhost:3000/api/users
+  headers:
+    - name: Content-Type
+      value: application/json
+  body:
+    type: json
+    data: |-
+      {
+        "email": "ahmedtest@gmail.com",
+        "password": "azerty123"
+      }
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("status 200", function () {
+          expect(res.status).to.equal(200);
+        });
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: true
+
+docs: |-
+  Creates the test user "ahmed test 1" (POST /api/users). No authentication required.
+  The API only stores email + password (no name field).
