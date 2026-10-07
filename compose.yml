@@ -3,6 +3,7 @@ name: mfp
 services:
   db:
     image: postgres:17
+    restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: supersecret
@@ -18,6 +19,7 @@ services:
 
   server:
     build: ./server
+    restart: unless-stopped
     environment:
       DB_HOST: db
     ports:
@@ -28,6 +30,7 @@ services:
 
   client:
     build: ./client
+    restart: unless-stopped
     environment:
       API_URL: http://server:3000
     ports:
