@@ -1,4 +1,4 @@
-# My Favorite Places — Clusterisation de conteneurs
+# My Favorite Places : Clusterisation de conteneurs
 
 Projet du module **Clusterisation de conteneurs** (ESGI Lyon, 5ESGI AL + IABD).
 <br/>L'objectif est de conteneuriser, orchestrer puis gérer la montée en charge de l'application **My Favorite Places** (un client React et une API Node.js/Express qui stocke ses données dans PostgreSQL).
@@ -37,6 +37,7 @@ Ce README documente **toute la démarche, étape par étape**.
 
 Toutes les commandes sont lancées depuis un terminal **WSL (Ubuntu)**, à la racine du dépôt.
 
+# TD1
 ---
 
 ## 1. Test initial avec Bruno
@@ -524,3 +525,5 @@ server {
 docker compose up -d --build
 docker images
 ```
+
+# TD2
