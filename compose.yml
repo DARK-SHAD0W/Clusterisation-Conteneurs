@@ -31,8 +31,6 @@ services:
   client:
     build: ./client
     restart: unless-stopped
-    environment:
-      API_URL: http://server:3000
     ports:
       - "5173:5173"
     depends_on:

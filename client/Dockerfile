@@ -1,19 +1,26 @@
-FROM node:24-alpine3.24
+# ---- stage 1: install all dependencies ----
+FROM node:24-alpine3.24 AS deps
 
 WORKDIR /app
 
-# dependencies first so this layer stays cached until package.json / yarn.lock change
-COPY package*.json yarn.lock ./
+COPY package.json yarn.lock ./
 RUN yarn install --frozen-lockfile
 
+# ---- stage 2: build the React app into static files (dist) ----
+FROM node:24-alpine3.24 AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json ./
+COPY tsconfig*.json vite.config.ts index.html ./
+COPY public ./public
+COPY src ./src
 
-COPY tsconfig*.json ./
-COPY vite.config.ts ./
-COPY index.html ./
-COPY public public
-COPY src src
+RUN yarn build
 
-EXPOSE 5173
+# ---- stage 3: production image, nginx serves the static files ----
+FROM nginx:1.29-alpine AS main
 
-# --host makes Vite listen on 0.0.0.0 so it is reachable from outside the container
-CMD ["yarn", "dev", "--host"]
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+EXPOSE 5731
