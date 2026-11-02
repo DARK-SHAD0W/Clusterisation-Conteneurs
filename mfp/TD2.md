@@ -1185,3 +1185,51 @@ docker compose exec manager docker stack services portainer
 
 - `stack deploy` affiche `Updating service` pour les 2 services : la stack est mise à jour, pas recréée.
 - Les 2 services sont de nouveau au complet : `4/4` pour les agents, `1/1` pour Portainer.
+
+### 3.3 Ouvrir Portainer dans le navigateur
+
+On ajoute la nouvelle adresse dans le fichier hosts :
+
+```
+127.0.0.1   portainer.swarm.localhost
+```
+
+<p align="center">
+  <img src="screenshots/td3-19-hosts-portainer.png" alt="L'adresse de Portainer dans le fichier hosts">
+</p>
+
+Au premier lancement, Portainer demande de créer un compte administrateur.
+<br/>Les versions récentes demandent aussi un **setup token**, une sécurité qui prouve qu'on a bien accès au serveur. On le trouve dans les logs de Portainer :
+
+```bash
+docker compose exec manager docker service logs --raw portainer_portainer 2>&1 | grep -A2 setup_token=
+```
+
+<p align="center">
+  <img src="screenshots/td3-18-portainer-token.png" alt="Le setup token dans les logs de Portainer">
+</p>
+
+On ouvre http://portainer.swarm.localhost, et on crée le compte `admin` avec un mot de passe d'au moins 12 caractères et le token :
+
+<p align="center">
+  <img src="screenshots/td3-20-portainer-setup.png" alt="Création du compte administrateur de Portainer">
+</p>
+
+> **Attention :** Portainer ne laisse que **5 minutes** après son démarrage pour créer ce compte. Passé ce délai, il s'arrête par sécurité, et il faut le relancer.
+
+**L'accueil de Portainer** :
+
+<p align="center">
+  <img src="screenshots/td3-21-portainer-home.png" alt="Accueil de Portainer avec l'environnement primary">
+</p>
+
+Portainer a trouvé notre cluster tout seul, grâce aux agents : l'environnement `primary` est `Up`, de type **Swarm**, avec ses **4 nœuds**.
+
+**La liste des stacks**, dans `primary` puis **Stacks** :
+
+<p align="center">
+  <img src="screenshots/td3-22-portainer-stacks.png" alt="Liste des stacks dans Portainer">
+</p>
+
+On retrouve bien nos 3 stacks : `portainer`, `traefik` et `voting`.
+<br/>Elles sont marquées **Limited** : elles ont été créées en ligne de commande, et non depuis Portainer, qui ne peut donc pas modifier leur fichier.
