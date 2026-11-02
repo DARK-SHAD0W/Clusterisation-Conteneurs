@@ -71,10 +71,11 @@ docker compose ps --format 'table {{.Name}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}
   <img src="screenshots/td3-08-vote-local.png" alt="Site de vote en local">
 </p>
 
-On vote une fois pour **Cats**. Ici, on passe par `curl`, ce qui revient à cliquer sur le bouton :
+On envoie 5 votes : 3 pour **Cats** et 2 pour **Dogs**. Ici, on passe par `curl`, ce qui revient à cliquer sur les boutons :
 
 ```bash
-curl -X POST -d vote=a http://localhost:8080/
+curl -X POST -d vote=a http://localhost:8080/   # Cats, 3 fois
+curl -X POST -d vote=b http://localhost:8080/   # Dogs, 2 fois
 ```
 
 **Le site des résultats**, sur http://localhost:8081 :
@@ -83,8 +84,8 @@ curl -X POST -d vote=a http://localhost:8080/
   <img src="screenshots/td3-09-result-local.png" alt="Site des résultats en local">
 </p>
 
-Le vote apparaît : **1 vote**, 100 % pour Cats.
-<br/>Il a fait tout le trajet : le site de vote l'a posé dans redis, le worker l'a enregistré dans la base, et le site des résultats l'a lu.
+Les votes apparaissent : **5 votes**, 60 % pour Cats et 40 % pour Dogs.
+<br/>Ils ont fait tout le trajet : le site de vote les a posés dans redis, le worker les a enregistrés dans la base, et le site des résultats les a lus.
 
 Une fois le test terminé, on arrête l'application avec `docker compose down`.
 
@@ -184,7 +185,12 @@ Il reste à ajouter les 2 nouvelles adresses dans le fichier hosts :
   <img src="screenshots/td3-13-vote-traefik.png" alt="Site de vote servi par Traefik">
 </p>
 
-On vote une nouvelle fois pour **Cats**, avec `curl -X POST -d vote=a http://vote.swarm.localhost/`.
+On envoie de nouveau 5 votes, 3 pour **Cats** et 2 pour **Dogs** :
+
+```bash
+curl -X POST -d vote=a http://vote.swarm.localhost/   # Cats, 3 fois
+curl -X POST -d vote=b http://vote.swarm.localhost/   # Dogs, 2 fois
+```
 
 **Le site des résultats**, sur http://result.swarm.localhost :
 
@@ -192,6 +198,6 @@ On vote une nouvelle fois pour **Cats**, avec `curl -X POST -d vote=a http://vot
   <img src="screenshots/td3-14-result-traefik.png" alt="Site des résultats servi par Traefik">
 </p>
 
-Le vote apparaît : **1 vote**, 100 % pour Cats.
-<br/>La base du cluster est neuve, d'où un seul vote, et non 2 avec celui du test en local.
+Les votes apparaissent : **5 votes**, 60 % pour Cats et 40 % pour Dogs.
+<br/>La base du cluster est différente de celle du test en local : on ne retrouve que les votes envoyés au cluster.
 <br/>Les 2 sites sont donc accessibles depuis le PC, chacun à sa propre adresse, sans retenir aucun port.
