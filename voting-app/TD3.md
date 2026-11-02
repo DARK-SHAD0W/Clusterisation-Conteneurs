@@ -109,3 +109,88 @@ docker compose exec manager docker stack services voting
 - `stack deploy` crée les 2 réseaux `voting_frontend` et `voting_backend`, puis les 5 services.
 - Après une minute environ, le temps de télécharger les images sur chaque nœud, tous les services sont au complet : `2/2` pour `vote` et `worker`, `1/1` pour les autres.
 - Les sites restent publiés sur les ports **8080** et **8081**, mais à l'intérieur du cluster : rien ne les relie encore au PC. C'est ce qu'on règle avec Traefik à la question suivante.
+
+### 2.3 Publier le vote et les résultats avec Traefik
+
+On s'inspire du service `whoami` de l'exercice 1. On écrit une nouvelle version de la stack, `docker-stack.traefik.yml`, où seuls `vote` et `result` changent :
+
+```yaml
+  vote:
+    image: dockersamples/examplevotingapp_vote
+    networks:
+      - frontend
+      - web
+    deploy:
+      replicas: 2
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.vote.rule=Host(`vote.swarm.localhost`)"
+        - "traefik.http.routers.vote.entrypoints=web"
+        - "traefik.http.services.vote.loadbalancer.server.port=80"
+
+  result:
+    image: dockersamples/examplevotingapp_result
+    networks:
+      - backend
+      - web
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.result.rule=Host(`result.swarm.localhost`)"
+        - "traefik.http.routers.result.entrypoints=web"
+        - "traefik.http.services.result.loadbalancer.server.port=80"
+
+networks:
+  frontend:
+  backend:
+  web:
+    external: true
+```
+
+- Les 2 services rejoignent le réseau `web`, celui de Traefik. Sans ça, Traefik ne pourrait pas leur parler.
+- Leurs labels indiquent à Traefik l'adresse de chaque site, et le port sur lequel il répond (**80**).
+- Les ports `8080` et `8081` disparaissent : c'est maintenant Traefik qui fait l'entrée.
+
+On redéploie avec le même nom de stack, `voting`. Swarm met alors à jour les services existants au lieu d'en créer de nouveaux :
+
+```bash
+docker compose cp ../../voting-app/docker-stack.traefik.yml manager:/home/manager/
+docker compose exec manager docker stack deploy --with-registry-auth -c /home/manager/docker-stack.traefik.yml voting
+docker compose exec manager docker stack services voting
+```
+
+<p align="center">
+  <img src="screenshots/td3-11-voting-traefik-deploy.png" alt="Mise à jour de la stack voting avec Traefik">
+</p>
+
+- `stack deploy` affiche `Updating service` pour chacun des 5 services.
+- Tous les services sont de nouveau au complet, et la colonne **PORTS** est vide : plus aucun port n'est publié.
+
+Il reste à ajouter les 2 nouvelles adresses dans le fichier hosts :
+
+```
+127.0.0.1   vote.swarm.localhost
+127.0.0.1   result.swarm.localhost
+```
+
+<p align="center">
+  <img src="screenshots/td3-12-hosts-voting.png" alt="Les adresses du vote et des résultats dans le fichier hosts">
+</p>
+
+**Le site de vote**, sur http://vote.swarm.localhost :
+
+<p align="center">
+  <img src="screenshots/td3-13-vote-traefik.png" alt="Site de vote servi par Traefik">
+</p>
+
+On vote une nouvelle fois pour **Cats**, avec `curl -X POST -d vote=a http://vote.swarm.localhost/`.
+
+**Le site des résultats**, sur http://result.swarm.localhost :
+
+<p align="center">
+  <img src="screenshots/td3-14-result-traefik.png" alt="Site des résultats servi par Traefik">
+</p>
+
+Le vote apparaît : **1 vote**, 100 % pour Cats.
+<br/>La base du cluster est neuve, d'où un seul vote, et non 2 avec celui du test en local.
+<br/>Les 2 sites sont donc accessibles depuis le PC, chacun à sa propre adresse, sans retenir aucun port.
