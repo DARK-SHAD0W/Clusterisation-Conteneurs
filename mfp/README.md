@@ -26,7 +26,7 @@ Ce README raconte la démarche, étape par étape (retour au [sommaire général
 **TD3**
 
 - [Exercice 1 : déployer Traefik](#exercice-1--déployer-traefik)
-- Exercice 2 : déployer une autre application → dans [`voting-app/`](../voting-app/TD3.md)
+- [Exercice 2 : déployer une autre application](../voting-app/TD3.md#exercice-2--déployer-une-autre-application) (dans le dossier `voting-app/`)
 
 ## Structure du dossier
 
@@ -909,7 +909,7 @@ docker compose exec manager docker node ls
 
 ### 1.2 Déployer Traefik sur le manager
 
-La stack fournie par le professeur est rangée dans `swarm/traefik.compose.yml`, sans modification. Elle contient 2 services :
+La stack de Traefik est rangée dans `swarm/traefik.compose.yml`. Elle contient 2 services :
 
 ```yaml
 services:
@@ -1033,7 +1033,10 @@ On travaille en local : aucun vrai nom de domaine ne pointe vers notre PC.
   <img src="screenshots/td3-04-hosts.png" alt="Les 2 domaines ajoutés au fichier hosts">
 </p>
 
-Le trajet d'une requête est alors le suivant : le navigateur demande `whoami.swarm.localhost` → le fichier hosts répond `127.0.0.1` → le port 80 du PC mène au port 80 du manager → Traefik lit le nom demandé et transmet au bon conteneur.
+Le trajet d'une requête est alors le suivant :
+1. le navigateur demande `whoami.swarm.localhost`, et le fichier hosts lui répond `127.0.0.1` ;
+2. la requête arrive sur le port 80 du PC, qui mène au port 80 du manager ;
+3. Traefik lit le nom demandé et transmet la requête au bon conteneur.
 
 **Le tableau de bord de Traefik**, sur http://traefik.swarm.localhost :
 
@@ -1054,4 +1057,4 @@ whoami nous renvoie le détail de la requête qu'elle a reçue :
 - Les en-têtes `X-Forwarded-…` sont ajoutés par Traefik : la requête est bien passée par le reverse proxy avant d'arriver au conteneur.
 - Les adresses en `10.0.x.x` sont celles du réseau overlay `web`.
 
-La suite du TD3 (exercice 2 : l'application de vote) se trouve dans [`voting-app/TD3.md`](../voting-app/TD3.md).
+La suite du TD3 (exercice 2) se trouve dans [voting-app/TD3.md](../voting-app/TD3.md).
