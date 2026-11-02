@@ -26,7 +26,7 @@ Ce README raconte la démarche, étape par étape (retour au [sommaire général
 **TD3**
 
 - [Exercice 1 : déployer Traefik](#exercice-1--déployer-traefik)
-- Exercice 2 : déployer une autre application → dans [`voting-app/`](../voting-app/README.md)
+- Exercice 2 : déployer une autre application → dans [`voting-app/`](../voting-app/TD3.md)
 
 ## Structure du dossier
 
@@ -1054,4 +1054,4 @@ whoami nous renvoie le détail de la requête qu'elle a reçue :
 - Les en-têtes `X-Forwarded-…` sont ajoutés par Traefik : la requête est bien passée par le reverse proxy avant d'arriver au conteneur.
 - Les adresses en `10.0.x.x` sont celles du réseau overlay `web`.
 
-La suite du TD3 (exercice 2 : l'application de vote) se trouve dans [`voting-app/README.md`](../voting-app/README.md).
+La suite du TD3 (exercice 2 : l'application de vote) se trouve dans [`voting-app/TD3.md`](../voting-app/TD3.md).
