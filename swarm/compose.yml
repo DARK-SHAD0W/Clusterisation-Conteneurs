@@ -6,6 +6,8 @@ services:
     image: docker:dind
     hostname: manager
     privileged: true
+    ports:
+      - "80:80" # Traefik, reachable from the host browser
     volumes:
       - /home/manager
 

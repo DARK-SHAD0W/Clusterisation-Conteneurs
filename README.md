@@ -23,6 +23,10 @@ Ce README raconte la démarche, étape par étape.
 - [Exercice 2 : création du cluster Docker Swarm](#exercice-2--création-du-cluster-docker-swarm)
 - [Exercice 3 : tests du cluster](#exercice-3--tests-du-cluster)
 
+**TD3**
+
+- [Exercice 1 : déployer Traefik](#exercice-1--déployer-traefik)
+
 ## Structure du dépôt
 
 ```
@@ -861,3 +865,40 @@ docker compose exec manager docker service ps hello_hello
 - `service ls` affiche le mode `global` : on ne choisit plus de nombre de copies, Swarm en place une par nœud.
 - `service ps` le montre bien : **une copie par nœud**, sur `manager`, `node1`, `node2` et `node3`. Chaque copie porte d'ailleurs l'identifiant de son nœud dans son nom.
 - Et si un nouveau nœud rejoint le cluster, Swarm y lance automatiquement sa copie.
+
+---
+
+# TD3
+
+**Objectif :** placer un **reverse proxy**, Traefik, devant notre cluster Swarm.
+<br/>Au lieu de retenir un port par application (`:8080`, `:8081`…), on tape une simple adresse comme `whoami.swarm.localhost` : Traefik lit le nom demandé par le navigateur et envoie la requête vers la bonne application.
+
+## Exercice 1 : déployer Traefik
+
+### 1.1 Relancer le cluster
+
+On repart du cluster du TD2 (1 manager et 3 nœuds).
+<br/>Seule nouveauté : le navigateur du PC doit pouvoir joindre Traefik, qui tournera dans le manager. On publie donc le port **80** du manager dans `swarm/compose.yml` :
+
+```yaml
+  manager:
+    image: docker:dind
+    hostname: manager
+    privileged: true
+    ports:
+      - "80:80" # Traefik, reachable from the host browser
+    volumes:
+      - /home/manager
+```
+
+```bash
+docker compose up -d
+docker compose exec manager docker node ls
+```
+
+<p align="center">
+  <img src="screenshots/td3-01-swarm-relaunch.png" alt="Relance du cluster avec le port 80 sur le manager">
+</p>
+
+- `up -d` ne touche pas aux 3 nœuds (`Running`) et recrée seulement le manager (`Recreated`), pour lui ajouter le port 80.
+- Après quelques secondes, `node ls` montre les **4 nœuds `Ready`**, avec `manager` toujours `Leader` : le cluster est prêt.
