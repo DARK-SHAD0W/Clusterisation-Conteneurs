@@ -63,8 +63,8 @@ docker compose ps --format 'table {{.Name}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}
 </p>
 
 - `up -d` construit les images de `vote`, `result` et `worker`, puis démarre les 5 conteneurs. La construction est longue : on ne garde ici que la fin de la sortie.
-- `ps` montre les 5 conteneurs `Up`. Redis et la base sont `healthy` : leurs scripts de vérification répondent.
-- Seuls `vote` (port 8080) et `result` (port 8081) sont accessibles depuis le PC.
+- `ps` montre les 5 conteneurs `Up`. `vote`, redis et la base sont `healthy` : leurs vérifications répondent.
+- Seuls `vote` (port 8080) et `result` (port 8081) sont accessibles depuis le PC. `result` publie aussi le port 9229 sur `127.0.0.1`, qui sert à déboguer Node.js.
 
 **Le site de vote**, sur http://localhost:8080 :
 
@@ -115,7 +115,7 @@ docker compose exec manager docker stack services voting
 
 ### 2.3 Publier le vote et les résultats avec Traefik
 
-On s'inspire du service `whoami` de l'exercice 1. On écrit une nouvelle version de la stack, `docker-stack.traefik.yml`, où seuls `vote` et `result` changent :
+On s'inspire du service `whoami` de l'exercice 1. On écrit une nouvelle version de la stack, `docker-stack.traefik.yml`, où seuls `vote` et `result` changent. On y retire aussi la ligne `version: "3.9"`, qui ne sert plus avec les versions récentes de Docker :
 
 ```yaml
   vote:
@@ -194,11 +194,11 @@ Traefik a trouvé tout seul les 2 nouveaux routeurs, `vote@swarm` et `result@swa
   <img src="screenshots/td3-13-vote-traefik.png" alt="Site de vote servi par Traefik">
 </p>
 
-On envoie de nouveau 5 votes, 3 pour **Cats** et 2 pour **Dogs** :
+On envoie de nouveau 5 votes, mais cette fois 2 pour **Cats** et 3 pour **Dogs** :
 
 ```bash
-curl -X POST -d vote=a http://vote.swarm.localhost/   # Cats, 3 fois
-curl -X POST -d vote=b http://vote.swarm.localhost/   # Dogs, 2 fois
+curl -X POST -d vote=a http://vote.swarm.localhost/   # Cats, 2 fois
+curl -X POST -d vote=b http://vote.swarm.localhost/   # Dogs, 3 fois
 ```
 
 **Le site des résultats**, sur http://result.swarm.localhost :
@@ -207,8 +207,8 @@ curl -X POST -d vote=b http://vote.swarm.localhost/   # Dogs, 2 fois
   <img src="screenshots/td3-14-result-traefik.png" alt="Site des résultats servi par Traefik">
 </p>
 
-Les votes apparaissent : **5 votes**, 60 % pour Cats et 40 % pour Dogs.
-<br/>La base du cluster est différente de celle du test en local : on ne retrouve que les votes envoyés au cluster.
+Les votes apparaissent : **5 votes**, 40 % pour Cats et 60 % pour Dogs.
+<br/>C'est l'inverse du test en local (60 % / 40 %) : la base du cluster est différente, on n'y retrouve que les votes envoyés au cluster.
 <br/>Les 2 sites sont donc accessibles depuis le PC, chacun à sa propre adresse, sans retenir aucun port.
 
 ## Exercice 4 : redéployer l'application de vote

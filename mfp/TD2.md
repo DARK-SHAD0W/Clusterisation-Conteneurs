@@ -1017,7 +1017,7 @@ docker compose exec manager docker service ls
 </p>
 
 - `stack deploy` crée les 2 services `traefik_traefik` et `traefik_whoami`.
-- Le temps de télécharger les images, `traefik_traefik` reste quelques secondes à `0/1`, puis les 2 services passent à **`1/1`**.
+- Les 2 services sont à **`1/1`** : Traefik et whoami tournent.
 - Seul Traefik publie un port (`*:80->80/tcp`) : `whoami` reste caché derrière lui.
 
 ### 1.3 Accéder à Traefik depuis le navigateur
@@ -1057,7 +1057,7 @@ On y retrouve le point d'entrée `web` sur le port **80**, et les routeurs et se
 whoami nous renvoie le détail de la requête qu'elle a reçue :
 - `Host: whoami.swarm.localhost` : c'est grâce à cet en-tête que Traefik a su vers quelle application envoyer la requête.
 - Les en-têtes `X-Forwarded-…` sont ajoutés par Traefik : la requête est bien passée par le reverse proxy avant d'arriver au conteneur.
-- Les adresses en `10.0.x.x` sont celles du réseau overlay `web`.
+- Les adresses en `10.0.x.x` appartiennent aux réseaux internes de Swarm : `10.0.2.x` pour notre réseau overlay `web` (celui où Traefik joint whoami), et `10.0.0.x` pour le réseau d'entrée du cluster (`ingress`), par lequel la requête est arrivée sur le port 80.
 
 La suite du TD3 (exercice 2) se trouve dans [voting-app/TD3.md](../voting-app/TD3.md).
 
