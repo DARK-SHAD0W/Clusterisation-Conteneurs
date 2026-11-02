@@ -260,3 +260,20 @@ On valide avec **Deploy the stack**. Portainer fait l'équivalent d'un `docker s
 </p>
 
 Les 5 services sont là, au complet : `2 / 2` pour `vote` et `worker`, `1 / 1` pour les autres. Aucun port n'est publié : c'est toujours Traefik qui fait l'entrée.
+
+### 4.3 Vérifier l'accès depuis le navigateur
+
+**Le site de vote**, sur http://vote.swarm.localhost :
+
+<p align="center">
+  <img src="screenshots/td3-27-vote-portainer.png" alt="Site de vote après le redéploiement depuis Portainer">
+</p>
+
+**Le site des résultats**, sur http://result.swarm.localhost :
+
+<p align="center">
+  <img src="screenshots/td3-28-result-portainer.png" alt="Site des résultats après le redéploiement depuis Portainer">
+</p>
+
+Les 2 sites répondent de nouveau à leurs adresses : la stack déployée par Portainer fonctionne comme celle déployée en ligne de commande.
+<br/>Les résultats affichent **No votes yet** : la base a été recréée sur un autre nœud (`node2` au lieu de `node3`), avec un volume neuf. Les anciens votes sont restés dans le volume de `node3`.
