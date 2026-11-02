@@ -52,6 +52,10 @@ docker compose up -d
 docker compose ps --format 'table {{.Name}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
 ```
 
+> **Problème rencontré :** la première tentative s'arrête sur `429 Too Many Requests`.
+> <br/>Docker Hub limite le nombre de téléchargements d'images sans compte, et nous en avions déjà fait beaucoup.
+> <br/>**Solution :** se connecter à Docker Hub avec `docker login`, puis relancer `docker compose up -d`.
+
 <p align="center">
   <img src="screenshots/td3-07-voting-compose-up.png" alt="Lancement de l'application avec Docker Compose">
 </p>
@@ -82,3 +86,26 @@ Le vote apparaît : **1 vote**, 100 % pour Cats.
 <br/>Il a fait tout le trajet : le site de vote l'a posé dans redis, le worker l'a enregistré dans la base, et le site des résultats l'a lu.
 
 Une fois le test terminé, on arrête l'application avec `docker compose down`.
+
+### 2.2 Déployer l'application sur le cluster Swarm
+
+Pour Swarm, on utilise le fichier `docker-stack.yml`. Il décrit les mêmes 5 services, avec 2 différences :
+- les images de `vote`, `result` et `worker` sont déjà publiées sur Docker Hub : Swarm ne sait pas construire d'images, il les télécharge ;
+- la partie `deploy` demande **2 copies** de `vote` et de `worker`.
+
+On se place dans `mfp/swarm`, là où se trouve notre cluster.
+<br/>Les nœuds aussi téléchargent des images sur Docker Hub : on se connecte donc dans le manager (`docker compose exec manager docker login`), et on déploie avec `--with-registry-auth`, qui transmet cette connexion aux autres nœuds.
+
+```bash
+docker compose cp ../../voting-app/docker-stack.yml manager:/home/manager/
+docker compose exec manager docker stack deploy --with-registry-auth -c /home/manager/docker-stack.yml voting
+docker compose exec manager docker stack services voting
+```
+
+<p align="center">
+  <img src="screenshots/td3-10-voting-stack-deploy.png" alt="Déploiement de la stack voting sur le cluster">
+</p>
+
+- `stack deploy` crée les 2 réseaux `voting_frontend` et `voting_backend`, puis les 5 services.
+- Après une minute environ, le temps de télécharger les images sur chaque nœud, tous les services sont au complet : `2/2` pour `vote` et `worker`, `1/1` pour les autres.
+- Les sites restent publiés sur les ports **8080** et **8081**, mais à l'intérieur du cluster : rien ne les relie encore au PC. C'est ce qu'on règle avec Traefik à la question suivante.
