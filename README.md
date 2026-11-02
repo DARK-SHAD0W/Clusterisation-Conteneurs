@@ -696,3 +696,37 @@ docker compose exec manager docker node ls
 ![Cluster recréé](screenshots/td2-08-swarm-rebuild.png)
 
 Le cluster est recréé : les 4 nœuds sont de nouveau `Ready`, et `manager` est `Leader`.
+
+### 3.3 Déployer la stack et observer le cluster
+
+Depuis le manager, on déploie la stack sous le nom `hello`, puis on regarde l'état du service :
+
+```bash
+docker compose exec manager docker stack deploy -c /home/manager/hello-world.compose.yml hello
+docker compose exec manager docker service ls
+docker compose exec manager docker service ps hello_hello
+```
+
+![Déploiement de la stack hello](screenshots/td2-09-stack-deploy.png)
+
+- `stack deploy` crée un réseau `hello_default` et un service `hello_hello` (nom de la stack + nom du service).
+- `service ls` affiche `REPLICAS 0/2` : on a demandé 2 copies, mais aucune n'est en cours d'exécution au moment de la commande.
+- `service ps` montre l'historique des 2 copies (`hello_hello.1` et `hello_hello.2`) : chaque conteneur passe à `Complete` au bout de quelques secondes, puis Swarm en relance un nouveau, à chaque fois sur un nœud différent (`node1`, `node2`, `node3`, mais aussi `manager`).
+
+On regarde ensuite les conteneurs présents sur chaque machine du cluster :
+
+```bash
+docker compose exec manager docker ps -a
+docker compose exec node1 docker ps -a
+docker compose exec node2 docker ps -a
+docker compose exec node3 docker ps -a
+```
+
+`-a` affiche aussi les conteneurs arrêtés : `hello-world` affiche son message puis s'arrête aussitôt, un simple `docker ps` serait donc presque toujours vide.
+
+![docker ps -a sur chaque nœud](screenshots/td2-10-docker-ps-nodes.png)
+
+**Ce qu'on en déduit :**
+- Les conteneurs de la stack sont **répartis sur toutes les machines** du cluster, y compris le `manager` : par défaut, un manager exécute aussi des conteneurs, comme un worker.
+- Chaque machine ne voit **que ses propres conteneurs** : c'est Swarm, depuis le manager, qui décide où lancer chaque copie.
+- `hello-world` s'arrête tout seul (`Exited (0)`, donc sans erreur). Comme `replicas: 2` demande 2 copies **en permanence**, Swarm en relance sans arrêt de nouvelles, sur un nœud ou un autre. C'est pour cela que `service ls` affiche le plus souvent `0/2` et que les conteneurs terminés s'accumulent.
