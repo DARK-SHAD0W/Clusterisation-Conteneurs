@@ -902,3 +902,114 @@ docker compose exec manager docker node ls
 
 - `up -d` ne touche pas aux 3 nœuds (`Running`) et recrée seulement le manager (`Recreated`), pour lui ajouter le port 80.
 - Après quelques secondes, `node ls` montre les **4 nœuds `Ready`**, avec `manager` toujours `Leader` : le cluster est prêt.
+
+### 1.2 Déployer Traefik sur le manager
+
+La stack fournie par le professeur est rangée dans `swarm/traefik.compose.yml`, sans modification. Elle contient 2 services :
+
+```yaml
+services:
+  traefik:
+    image: traefik:v3.6
+    networks:
+      # Connect to the 'web' overlay network for inter-container communication across nodes
+      - web
+    ports:
+      - 80:80 # HTTP
+      # - 443:443   # HTTPS - Would work only on a server
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro # Swarm API socket
+    command:
+      # HTTP EntryPoint
+      - "--entrypoints.web.address=:80"
+      # Enable the Docker Swarm provider (instead of Docker provider)
+      - "--providers.swarm.endpoint=unix:///var/run/docker.sock"
+      # Watch for Swarm service changes (requires socket access)
+      - "--providers.swarm.watch=true"
+      # Recommended: Don't expose services by default; require explicit labels
+      - "--providers.swarm.exposedbydefault=false"
+      # Specify the default network for Traefik to connect to services
+      - "--providers.swarm.network=web"
+      # API & Dashboard
+      - "--api.dashboard=true" # Enable the dashboard
+      - "--api.insecure=true" # Explicitly disable insecure API mod
+      # Observability
+      - "--log.level=INFO" # Set the Log Level e.g INFO, DEBUG
+      - "--accesslog=true" # Enable Access Logs
+      # - "--metrics.prometheus=true" # Enable Prometheus
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        # Placement constraints restrict where Traefik tasks can run.
+        # Running on manager nodes is common for accessing the Swarm API via the socket.
+        constraints:
+          - node.role == manager
+      # Traefik Dynamic configuration via labels
+      # In Swarm, labels on the service definition configure Traefik routing for that service.
+      labels:
+        - "traefik.enable=true"
+        # Dashboard router
+        - "traefik.http.routers.dashboard.rule=Host(`traefik.swarm.localhost`)"
+        - "traefik.http.routers.dashboard.entrypoints=web"
+        - "traefik.http.routers.dashboard.service=api@internal"
+        - "traefik.http.services.dashboard.loadbalancer.server.port=8080"
+
+  # Deploy the Whoami application
+  whoami:
+    image: traefik/whoami
+    networks:
+      - web
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.whoami.rule=Host(`whoami.swarm.localhost`)"
+        - "traefik.http.routers.whoami.entrypoints=web"
+        - "traefik.http.services.whoami.loadbalancer.server.port=80"
+
+# Define the overlay network for Swarm
+networks:
+  web:
+    external: true
+```
+
+**Le service `traefik`**, notre reverse proxy :
+- il écoute sur le port **80** (`entrypoints.web.address=:80`) ;
+- il lit le socket Docker (`/var/run/docker.sock`) pour découvrir tout seul les services du cluster (`providers.swarm`) ;
+- `exposedbydefault=false` : un service n'est publié que s'il le demande lui-même, avec le label `traefik.enable=true` ;
+- `node.role == manager` : il tourne forcément sur le manager, le seul nœud qui connaît tout le cluster (et le seul dont on a publié le port 80) ;
+- ses propres labels publient son **tableau de bord** sur `traefik.swarm.localhost`.
+
+**Le service `whoami`**, une petite application de test qui affiche des infos sur la requête reçue. Il n'expose **aucun port** : il se présente à Traefik avec ses labels.
+- `traefik.http.routers.whoami.rule=Host(...)` : « envoie-moi les requêtes qui arrivent pour `whoami.swarm.localhost` » ;
+- `traefik.http.services.whoami.loadbalancer.server.port=80` : « je réponds sur mon port 80 ».
+
+Les deux services se branchent sur le réseau `web`, déclaré `external: true` : la stack ne le crée pas, il doit donc exister **avant** le déploiement.
+<br/>On le crée en mode **overlay** : un réseau qui s'étend sur tous les nœuds du cluster. Traefik, sur le manager, peut ainsi parler à un conteneur placé sur n'importe quel autre nœud.
+
+```bash
+docker compose exec manager docker network create --driver overlay web
+docker compose exec manager docker network ls --filter name=web
+```
+
+<p align="center">
+  <img src="screenshots/td3-02-network-web.png" alt="Création du réseau overlay web">
+</p>
+
+Le réseau `web` existe, avec le driver `overlay` et la portée `swarm` : il est bien partagé par tout le cluster.
+
+On fait d'abord le ménage du TD2 (`docker compose exec manager docker stack rm hello` et `docker compose exec manager docker service rm web`), puis on copie la stack dans le manager et on la déploie :
+
+```bash
+docker compose cp traefik.compose.yml manager:/home/manager/
+docker compose exec manager docker stack deploy -c /home/manager/traefik.compose.yml traefik
+docker compose exec manager docker service ls
+```
+
+<p align="center">
+  <img src="screenshots/td3-03-traefik-deploy.png" alt="Déploiement de la stack Traefik">
+</p>
+
+- `stack deploy` crée les 2 services `traefik_traefik` et `traefik_whoami`.
+- Le temps de télécharger les images, `traefik_traefik` reste quelques secondes à `0/1`, puis les 2 services passent à **`1/1`**.
+- Seul Traefik publie un port (`*:80->80/tcp`) : `whoami` reste caché derrière lui.
