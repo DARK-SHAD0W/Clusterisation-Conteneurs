@@ -11,6 +11,7 @@ Ce document fait suite à l'[exercice 1 du TD3](../mfp/TD2.md#exercice-1--déplo
 **TD3**
 
 - [Exercice 2 : déployer une autre application](#exercice-2--déployer-une-autre-application)
+- [Exercice 4 : redéployer l'application de vote](#exercice-4--redéployer-lapplication-de-vote)
 
 ## Structure du dossier
 
@@ -209,3 +210,25 @@ curl -X POST -d vote=b http://vote.swarm.localhost/   # Dogs, 2 fois
 Les votes apparaissent : **5 votes**, 60 % pour Cats et 40 % pour Dogs.
 <br/>La base du cluster est différente de celle du test en local : on ne retrouve que les votes envoyés au cluster.
 <br/>Les 2 sites sont donc accessibles depuis le PC, chacun à sa propre adresse, sans retenir aucun port.
+
+## Exercice 4 : redéployer l'application de vote
+
+Cette fois, on ne déploie plus la stack en ligne de commande, mais depuis **Portainer**, installé à l'[exercice 3](../mfp/TD2.md#exercice-3--déployer-portainer).
+
+### 4.1 Supprimer la stack depuis le manager
+
+Depuis `mfp/swarm`, on liste les stacks du cluster, puis on supprime celle de l'application de vote :
+
+```bash
+docker compose exec manager docker stack ls
+docker compose exec manager docker stack rm voting
+docker compose exec manager docker stack ls
+```
+
+<p align="center">
+  <img src="screenshots/td3-23-voting-stack-rm.png" alt="Suppression de la stack voting">
+</p>
+
+- `stack ls` montre nos 3 stacks : `portainer`, `traefik` et `voting` (5 services).
+- `stack rm voting` supprime ses 5 services et ses 2 réseaux.
+- Au second `stack ls`, il ne reste plus que `portainer` et `traefik`.
