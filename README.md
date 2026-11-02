@@ -1013,3 +1013,39 @@ docker compose exec manager docker service ls
 - `stack deploy` crée les 2 services `traefik_traefik` et `traefik_whoami`.
 - Le temps de télécharger les images, `traefik_traefik` reste quelques secondes à `0/1`, puis les 2 services passent à **`1/1`**.
 - Seul Traefik publie un port (`*:80->80/tcp`) : `whoami` reste caché derrière lui.
+
+### 1.3 Accéder à Traefik depuis le navigateur
+
+On travaille en local : aucun vrai nom de domaine ne pointe vers notre PC.
+<br/>On passe donc par le **fichier hosts**, une sorte de mini-DNS interne à l'ordinateur, consulté en priorité et pris en compte immédiatement.
+<br/>Sous Windows, il se trouve dans `C:\Windows\System32\drivers\etc\hosts` (il faut l'ouvrir en administrateur). On y ajoute nos 2 adresses, qui pointent vers notre propre machine :
+
+```
+127.0.0.1   traefik.swarm.localhost
+127.0.0.1   whoami.swarm.localhost
+```
+
+<p align="center">
+  <img src="screenshots/td3-04-hosts.png" alt="Les 2 domaines ajoutés au fichier hosts">
+</p>
+
+Le trajet d'une requête est alors le suivant : le navigateur demande `whoami.swarm.localhost` → le fichier hosts répond `127.0.0.1` → le port 80 du PC mène au port 80 du manager → Traefik lit le nom demandé et transmet au bon conteneur.
+
+**Le tableau de bord de Traefik**, sur http://traefik.swarm.localhost :
+
+<p align="center">
+  <img src="screenshots/td3-05-traefik-dashboard.png" alt="Tableau de bord de Traefik">
+</p>
+
+On y retrouve le point d'entrée `web` sur le port **80**, et les routeurs et services découverts tout seuls grâce aux labels, sans aucune erreur.
+
+**L'application whoami**, sur http://whoami.swarm.localhost :
+
+<p align="center">
+  <img src="screenshots/td3-06-whoami.png" alt="Page whoami servie par Traefik">
+</p>
+
+whoami nous renvoie le détail de la requête qu'elle a reçue :
+- `Host: whoami.swarm.localhost` : c'est grâce à cet en-tête que Traefik a su vers quelle application envoyer la requête.
+- Les en-têtes `X-Forwarded-…` sont ajoutés par Traefik : la requête est bien passée par le reverse proxy avant d'arriver au conteneur.
+- Les adresses en `10.0.x.x` sont celles du réseau overlay `web`.
