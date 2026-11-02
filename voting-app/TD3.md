@@ -16,14 +16,15 @@ Ce document fait suite à l'[exercice 1 du TD3](../mfp/README.md#exercice-1--dé
 
 ```
 voting-app/
-├── vote/                 # site de vote (Python)
-├── result/               # site des résultats (Node.js)
-├── worker/               # traitement des votes (.NET)
-├── healthchecks/         # scripts de vérification de redis et de la base
-├── docker-compose.yml    # lancement en local
-├── docker-stack.yml      # stack pour Docker Swarm
-├── screenshots/          # captures d'écran
-└── TD3.md                # ce document
+├── vote/                     # site de vote (Python)
+├── result/                   # site des résultats (Node.js)
+├── worker/                   # traitement des votes (.NET)
+├── healthchecks/             # scripts de vérification de redis et de la base
+├── docker-compose.yml        # lancement en local
+├── docker-stack.yml          # stack pour Docker Swarm
+├── docker-stack.traefik.yml  # même stack, publiée avec Traefik
+├── screenshots/              # captures d'écran
+└── TD3.md                    # ce document
 ```
 
 ---
