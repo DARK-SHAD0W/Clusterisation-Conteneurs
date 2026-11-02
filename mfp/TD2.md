@@ -28,6 +28,7 @@ Ce document raconte la démarche, étape par étape (retour au [sommaire génér
 - [Exercice 1 : déployer Traefik](#exercice-1--déployer-traefik)
 - [Exercice 2 : déployer une autre application](../voting-app/TD3.md#exercice-2--déployer-une-autre-application) (dans le dossier `voting-app/`)
 - [Exercice 3 : déployer Portainer](#exercice-3--déployer-portainer)
+- [Exercice 4 : déployer l'API de MFP depuis Portainer](#exercice-4--déployer-lapi-de-mfp-depuis-portainer)
 
 ## Structure du dossier
 
@@ -1233,3 +1234,97 @@ Portainer a trouvé notre cluster tout seul, grâce aux agents : l'environnement
 
 On retrouve bien nos 3 stacks : `portainer`, `traefik` et `voting`.
 <br/>Elles sont marquées **Limited** : elles ont été créées en ligne de commande, et non depuis Portainer, qui ne peut donc pas modifier leur fichier.
+
+## Exercice 4 : déployer l'API de MFP depuis Portainer
+
+Les questions 4.1 à 4.3 (redéployer l'application de vote depuis Portainer) se trouvent dans [voting-app/TD3.md](../voting-app/TD3.md#exercice-4--redéployer-lapplication-de-vote).
+
+### 4.4 Créer une stack pour l'API de MFP
+
+On écrit une stack pour l'API, `swarm/mfp-api.stack.yml`. Elle reprend la base et le serveur de notre `compose.yml`, avec 2 différences :
+- le serveur utilise l'image publiée sur GHCR (prérequis du TD2), puisque Swarm ne sait pas construire d'images ;
+- au lieu de publier le port 3000, le serveur passe par Traefik, sur l'adresse `api.swarm.localhost`.
+
+```yaml
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: supersecret
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - backend
+
+  server:
+    image: ghcr.io/dark-shad0w/clusterisation-conteneurs/server:latest
+    networks:
+      - backend
+      - web
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.mfp-api.rule=Host(`api.swarm.localhost`)"
+        - "traefik.http.routers.mfp-api.entrypoints=web"
+        - "traefik.http.services.mfp-api.loadbalancer.server.port=3000"
+
+networks:
+  backend:
+  web:
+    external: true
+
+volumes:
+  db-data:
+```
+
+- `db` reste sur le réseau `backend` : seul le serveur peut lui parler, et il le trouve toujours par son nom, `db`.
+- `server` est aussi sur `web`, pour que Traefik puisse lui transmettre les requêtes.
+
+Dans Portainer, on crée la stack comme à la question 4.2 : **Add stack**, nom `mfp`, **Upload** du fichier, puis **Deploy the stack**.
+
+<p align="center">
+  <img src="screenshots/td3-29-portainer-add-mfp.png" alt="Création de la stack mfp dans Portainer">
+</p>
+
+<p align="center">
+  <img src="screenshots/td3-30-portainer-stacks-mfp.png" alt="La stack mfp dans la liste des stacks">
+</p>
+
+<p align="center">
+  <img src="screenshots/td3-31-portainer-mfp-services.png" alt="Les services de la stack mfp">
+</p>
+
+La stack `mfp` apparaît, créée par `admin`, avec ses 2 services au complet : `mfp_db` et `mfp_server`.
+
+> **Problème rencontré :** au premier démarrage, le serveur s'arrête sur `unable to connect to db: getaddrinfo ENOTFOUND db`. Swarm lance les 2 services en même temps, et la base n'existait pas encore.
+> <br/>**Solution :** rien à faire. Swarm relance automatiquement le serveur, qui se connecte au deuxième essai (`connected to PgSQL db`, puis `server started on port 3000`).
+
+On ajoute l'adresse de l'API dans le fichier hosts :
+
+```
+127.0.0.1   api.swarm.localhost
+```
+
+<p align="center">
+  <img src="screenshots/td3-32-hosts-api.png" alt="L'adresse de l'API dans le fichier hosts">
+</p>
+
+**Test avec Bruno.** Notre collection vise `http://localhost:3000`. Pour ne pas la modifier, on en fait une copie dans laquelle on remplace l'adresse par `http://api.swarm.localhost`, puis on lance les 3 requêtes avec le Bruno CLI (`bru run`) :
+
+```bash
+cp -r mfp-bruno-api-test-collection ~/mfp-bruno-swarm
+sed -i 's#http://localhost:3000#http://api.swarm.localhost#' ~/mfp-bruno-swarm/*.yml
+cd ~/mfp-bruno-swarm && bru run
+```
+
+<p align="center">
+  <img src="screenshots/td3-33-bruno-swarm.png" alt="Les 3 requêtes Bruno vers l'API sur le cluster">
+</p>
+
+Les 3 requêtes répondent `200 OK`, et les 3 tests passent (**PASS**) :
+- `01-create-user` crée l'utilisateur dans la base du cluster ;
+- `02-login` renvoie un token ;
+- `03-my-profile` utilise ce token pour lire le profil.
+
+L'API de MFP tourne donc sur le cluster, et répond depuis le PC à l'adresse `api.swarm.localhost`.

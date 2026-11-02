@@ -16,11 +16,12 @@ Projet du module **Clusterisation de conteneurs** (ESGI Lyon, 5ESGI AL + IABD).
 - [TD2 : cluster Docker Swarm](mfp/TD2.md#td2)
 - [TD3 : Traefik, exercice 1](mfp/TD2.md#td3)
 - [TD3 : Portainer, exercice 3](mfp/TD2.md#exercice-3--déployer-portainer)
+- [TD3 : Portainer, exercice 4.4 (API de MFP)](mfp/TD2.md#exercice-4--déployer-lapi-de-mfp-depuis-portainer)
 
 **Voting App**
 
 - [TD3 : Traefik, exercice 2](voting-app/TD3.md#td3)
-- [TD3 : Portainer, exercice 4](voting-app/TD3.md#exercice-4--redéployer-lapplication-de-vote)
+- [TD3 : Portainer, exercice 4.1 à 4.3](voting-app/TD3.md#exercice-4--redéployer-lapplication-de-vote)
 
 ## Structure du dépôt
 

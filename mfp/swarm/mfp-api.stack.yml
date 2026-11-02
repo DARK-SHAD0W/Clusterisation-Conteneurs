@@ -1,0 +1,33 @@
+# My Favorite Places API on the swarm, published through Traefik on api.swarm.localhost
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: supersecret
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - backend
+
+  server:
+    image: ghcr.io/dark-shad0w/clusterisation-conteneurs/server:latest
+    networks:
+      - backend
+      - web
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.mfp-api.rule=Host(`api.swarm.localhost`)"
+        - "traefik.http.routers.mfp-api.entrypoints=web"
+        - "traefik.http.services.mfp-api.loadbalancer.server.port=3000"
+
+networks:
+  backend:
+  # overlay network shared with Traefik (created in TD3 exercise 1)
+  web:
+    external: true
+
+volumes:
+  db-data:
