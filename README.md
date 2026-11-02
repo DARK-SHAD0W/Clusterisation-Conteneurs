@@ -5,16 +5,16 @@ Projet du module **Clusterisation de conteneurs** (ESGI Lyon, 5ESGI AL + IABD).
 
 | Dossier | Application | Documentation |
 |---|---|---|
-| `mfp/` | **My Favorite Places** : un client React, une API Node.js/Express et une base PostgreSQL. | [mfp/README.md](mfp/README.md) |
+| `mfp/` | **My Favorite Places** : un client React, une API Node.js/Express et une base PostgreSQL. | [mfp/TD2.md](mfp/TD2.md) |
 | `voting-app/` | **Voting App** : une application de vote répartie en 5 services. | [voting-app/TD3.md](voting-app/TD3.md) |
 
 ## Sommaire
 
 **My Favorite Places**
 
-- [TD1 : dockerisation de l'application](mfp/README.md#td1)
-- [TD2 : cluster Docker Swarm](mfp/README.md#td2)
-- [TD3 : Traefik, exercice 1](mfp/README.md#td3)
+- [TD1 : dockerisation de l'application](mfp/TD2.md#td1)
+- [TD2 : cluster Docker Swarm](mfp/TD2.md#td2)
+- [TD3 : Traefik, exercice 1](mfp/TD2.md#td3)
 
 **Voting App**
 
@@ -25,7 +25,7 @@ Projet du module **Clusterisation de conteneurs** (ESGI Lyon, 5ESGI AL + IABD).
 ```
 .
 ├── .github/workflows/   # construit et publie les images de mfp sur GHCR
-├── mfp/                 # My Favorite Places et le cluster Docker Swarm (swarm/)
+├── mfp/                 # My Favorite Places et le cluster Docker Swarm (documentation dans TD2.md)
 └── voting-app/          # Voting App (documentation dans TD3.md)
 ```
 

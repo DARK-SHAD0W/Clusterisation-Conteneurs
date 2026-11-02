@@ -3,7 +3,7 @@
 Deuxième application du module **Clusterisation de conteneurs** (ESGI Lyon, 5ESGI AL + IABD).
 <br/>Le but : faire tourner une application de vote, d'abord avec Docker Compose, puis sur notre cluster Docker Swarm, derrière Traefik.
 
-Ce document fait suite à l'[exercice 1 du TD3](../mfp/README.md#exercice-1--déployer-traefik), où Traefik a été déployé sur le cluster.
+Ce document fait suite à l'[exercice 1 du TD3](../mfp/TD2.md#exercice-1--déployer-traefik), où Traefik a été déployé sur le cluster.
 <br/>Retour au [sommaire général](../README.md).
 
 ## Sommaire
@@ -178,6 +178,14 @@ Il reste à ajouter les 2 nouvelles adresses dans le fichier hosts :
 <p align="center">
   <img src="screenshots/td3-12-hosts-voting.png" alt="Les adresses du vote et des résultats dans le fichier hosts">
 </p>
+
+**Le tableau de bord de Traefik**, page **HTTP Routers**, sur http://traefik.swarm.localhost :
+
+<p align="center">
+  <img src="screenshots/td3-15-traefik-routers.png" alt="Routeurs HTTP de Traefik avec vote et result">
+</p>
+
+Traefik a trouvé tout seul les 2 nouveaux routeurs, `vote@swarm` et `result@swarm`, grâce aux labels. Chacun a sa règle `Host(...)`, passe par le point d'entrée `web`, et est en vert : aucune erreur.
 
 **Le site de vote**, sur http://vote.swarm.localhost :
 
