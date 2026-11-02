@@ -6,7 +6,7 @@ on:
   push:
     branches: ['main']
     paths:
-      - 'server/**'
+      - 'mfp/server/**'
       - '.github/workflows/build.server.yml'
   workflow_dispatch:  # also allows a manual run from the Actions tab
 
@@ -45,7 +45,7 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
         with:
-          context: ./server
+          context: ./mfp/server
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
