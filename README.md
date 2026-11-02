@@ -730,3 +730,60 @@ docker compose exec node3 docker ps -a
 - Les conteneurs de la stack sont **répartis sur toutes les machines** du cluster, y compris le `manager` : par défaut, un manager exécute aussi des conteneurs, comme un worker.
 - Chaque machine ne voit **que ses propres conteneurs** : c'est Swarm, depuis le manager, qui décide où lancer chaque copie.
 - `hello-world` s'arrête tout seul (`Exited (0)`, donc sans erreur). Comme `replicas: 2` demande 2 copies **en permanence**, Swarm en relance sans arrêt de nouvelles, sur un nœud ou un autre. C'est pour cela que `service ls` affiche le plus souvent `0/2` et que les conteneurs terminés s'accumulent.
+
+### 3.4 Faire varier la clause `deploy`
+
+Entre chaque essai, on supprime la stack précédente avec `docker stack rm hello`, on copie le nouveau fichier dans le manager, puis on redéploie.
+
+#### Sur le manager uniquement (par rôle)
+
+Fichier `swarm/hello-world-manager.compose.yml` :
+
+```yaml
+services:
+  hello:
+    image: hello-world
+    deploy:
+      replicas: 2
+      placement:
+        constraints:
+          - node.role == manager
+```
+
+```bash
+docker compose exec manager docker stack rm hello
+docker compose cp hello-world-manager.compose.yml manager:/home/manager/
+docker compose exec manager docker stack deploy -c /home/manager/hello-world-manager.compose.yml hello
+docker compose exec manager docker service ps hello_hello
+```
+
+![Stack sur le manager uniquement](screenshots/td2-11-stack-manager.png)
+
+- La contrainte `node.role == manager` n'autorise Swarm à placer les conteneurs que sur les nœuds qui ont le rôle **manager**.
+- `service ps` le confirme : toutes les copies de `hello_hello.1` et `hello_hello.2` tournent sur `manager`, aucune sur `node1`, `node2` ou `node3`.
+
+#### Sur tous les nœuds (`global`)
+
+Fichier `swarm/hello-world-global.compose.yml` :
+
+```yaml
+services:
+  hello:
+    image: hello-world
+    deploy:
+      mode: global
+```
+
+```bash
+docker compose exec manager docker stack rm hello
+docker compose cp hello-world-global.compose.yml manager:/home/manager/
+docker compose exec manager docker stack deploy -c /home/manager/hello-world-global.compose.yml hello
+docker compose exec manager docker service ls
+docker compose exec manager docker service ps hello_hello
+```
+
+![Stack en mode global](screenshots/td2-12-stack-global.png)
+
+- `service ls` affiche le mode `global` : on ne choisit plus un nombre de copies.
+- `service ps` montre **une copie par nœud** : `manager`, `node1`, `node2` et `node3`. Chaque copie porte l'identifiant de son nœud dans son nom (`hello_hello.<id du nœud>`).
+- Si on ajoute un nœud au cluster, Swarm y lance automatiquement une copie.
