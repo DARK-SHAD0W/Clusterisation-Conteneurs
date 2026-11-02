@@ -15,6 +15,7 @@ Projet du module **Clusterisation de conteneurs** (ESGI Lyon, 5ESGI AL + IABD).
 - [TD1 : dockerisation de l'application](mfp/TD2.md#td1)
 - [TD2 : cluster Docker Swarm](mfp/TD2.md#td2)
 - [TD3 : Traefik, exercice 1](mfp/TD2.md#td3)
+- [TD3 : Portainer, exercice 3](mfp/TD2.md#exercice-3--déployer-portainer)
 
 **Voting App**
 

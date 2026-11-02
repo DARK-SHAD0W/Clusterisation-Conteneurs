@@ -27,6 +27,7 @@ Ce document raconte la démarche, étape par étape (retour au [sommaire génér
 
 - [Exercice 1 : déployer Traefik](#exercice-1--déployer-traefik)
 - [Exercice 2 : déployer une autre application](../voting-app/TD3.md#exercice-2--déployer-une-autre-application) (dans le dossier `voting-app/`)
+- [Exercice 3 : déployer Portainer](#exercice-3--déployer-portainer)
 
 ## Structure du dossier
 
@@ -1058,3 +1059,77 @@ whoami nous renvoie le détail de la requête qu'elle a reçue :
 - Les adresses en `10.0.x.x` sont celles du réseau overlay `web`.
 
 La suite du TD3 (exercice 2) se trouve dans [voting-app/TD3.md](../voting-app/TD3.md).
+
+## Exercice 3 : déployer Portainer
+
+Jusqu'ici, on pilote le cluster en tapant des commandes dans le manager (`docker compose exec manager …`).
+<br/>**Portainer** est une interface web qui permet de faire la même chose depuis le navigateur : voir les nœuds, les stacks, les services, et en déployer de nouvelles.
+
+### 3.1 Déployer Portainer sur le cluster
+
+On suit la documentation d'installation de Portainer pour Docker Swarm. On télécharge d'abord sa stack dans `swarm/portainer-agent-stack.yml` :
+
+```yaml
+version: '3.2'
+
+services:
+  agent:
+    image: portainer/agent:lts
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/volumes:/var/lib/docker/volumes
+    networks:
+      - agent_network
+    deploy:
+      mode: global
+      placement:
+        constraints: [node.platform.os == linux]
+
+  portainer:
+    image: portainer/portainer-ce:lts
+    command: -H tcp://tasks.agent:9001 --tlsskipverify
+    ports:
+      - "9443:9443"
+      - "9000:9000"
+      - "8000:8000"
+    volumes:
+      - portainer_data:/data
+    networks:
+      - agent_network
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+
+networks:
+  agent_network:
+    driver: overlay
+    attachable: true
+
+volumes:
+  portainer_data:
+```
+
+Elle contient 2 services :
+- `agent` : en mode `global`, il tourne sur **chaque nœud** et donne à Portainer accès au Docker de ce nœud (via `docker.sock`).
+- `portainer` : l'interface elle-même, placée sur le manager (`node.role == manager`). Elle parle aux agents par le réseau overlay `agent_network`.
+
+L'interface répond sur le port **9000** (HTTP) et **9443** (HTTPS). Le port 8000 ne sert que pour des agents distants, dont on n'a pas besoin ici.
+
+```bash
+curl -sL https://downloads.portainer.io/ce-lts/portainer-agent-stack.yml -o portainer-agent-stack.yml
+docker compose cp portainer-agent-stack.yml manager:/home/manager/
+docker compose exec manager docker stack deploy --with-registry-auth -c /home/manager/portainer-agent-stack.yml portainer
+docker compose exec manager docker stack services portainer
+docker compose exec manager docker ps --filter name=portainer --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+```
+
+<p align="center">
+  <img src="screenshots/td3-16-portainer-deploy.png" alt="Déploiement de la stack Portainer">
+</p>
+
+- `stack deploy` crée le réseau `portainer_agent_network` et les 2 services.
+- `portainer_agent` affiche **`4/4`** en mode `global` : un agent sur chacun de nos 4 nœuds.
+- `portainer_portainer` est à `1/1`, sur le manager. Comme le demande la documentation, `docker ps` montre bien les 2 conteneurs `portainer-ce` et `agent` sur le manager.
+- Les ports 9000 et 9443 ne sont publiés qu'à l'intérieur du cluster : depuis le PC, on passera par Traefik à la question suivante.
