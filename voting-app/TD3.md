@@ -232,3 +232,31 @@ docker compose exec manager docker stack ls
 - `stack ls` montre nos 3 stacks : `portainer`, `traefik` et `voting` (5 services).
 - `stack rm voting` supprime ses 5 services et ses 2 réseaux.
 - Au second `stack ls`, il ne reste plus que `portainer` et `traefik`.
+
+### 4.2 Republier la stack depuis Portainer
+
+Dans Portainer, on ouvre l'environnement `primary`, puis **Stacks** et **Add stack** :
+- **Name** : `voting`, comme avant ;
+- **Build method** : **Upload**, avec notre fichier `docker-stack.traefik.yml`. C'est la version de la question 2.3, pour que le vote et les résultats gardent leurs 2 adresses.
+
+On valide avec **Deploy the stack**. Portainer fait l'équivalent d'un `docker stack deploy`.
+
+<p align="center">
+  <img src="screenshots/td3-24-portainer-add-stack.png" alt="Création de la stack voting dans Portainer">
+</p>
+
+**La liste des stacks** :
+
+<p align="center">
+  <img src="screenshots/td3-25-portainer-stacks.png" alt="La stack voting créée par Portainer">
+</p>
+
+`voting` est de retour. Cette fois, son contrôle est **Total** et elle est notée `created by admin` : c'est Portainer qui l'a créée, il peut donc aussi la modifier ou la supprimer.
+
+**Les services de la stack**, en cliquant sur `voting` :
+
+<p align="center">
+  <img src="screenshots/td3-26-portainer-voting-services.png" alt="Les 5 services de la stack voting dans Portainer">
+</p>
+
+Les 5 services sont là, au complet : `2 / 2` pour `vote` et `worker`, `1 / 1` pour les autres. Aucun port n'est publié : c'est toujours Traefik qui fait l'entrée.
