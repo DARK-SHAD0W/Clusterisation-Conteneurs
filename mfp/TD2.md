@@ -1133,3 +1133,55 @@ docker compose exec manager docker ps --filter name=portainer --format 'table {{
 - `portainer_agent` affiche **`4/4`** en mode `global` : un agent sur chacun de nos 4 nœuds.
 - `portainer_portainer` est à `1/1`, sur le manager. Comme le demande la documentation, `docker ps` montre bien les 2 conteneurs `portainer-ce` et `agent` sur le manager.
 - Les ports 9000 et 9443 ne sont publiés qu'à l'intérieur du cluster : depuis le PC, on passera par Traefik à la question suivante.
+
+### 3.2 Publier Portainer avec Traefik
+
+Comme pour `whoami`, on ajoute à Portainer les labels qui le publient sur une nouvelle adresse, `portainer.swarm.localhost`. Son interface principale répond sur le port **9000**.
+<br/>On le branche aussi sur le réseau `web`, sinon Traefik ne pourrait pas le joindre. Le tout est rangé dans une nouvelle version de la stack, `swarm/portainer-agent-stack.traefik.yml` :
+
+```yaml
+  portainer:
+    image: portainer/portainer-ce:lts
+    command: -H tcp://tasks.agent:9001 --tlsskipverify
+    ports:
+      - "9443:9443"
+      - "9000:9000"
+      - "8000:8000"
+    volumes:
+      - portainer_data:/data
+    networks:
+      - agent_network
+      - web
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.portainer.rule=Host(`portainer.swarm.localhost`)"
+        - "traefik.http.routers.portainer.entrypoints=web"
+        - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+
+networks:
+  agent_network:
+    driver: overlay
+    attachable: true
+  web:
+    external: true
+```
+
+On redéploie avec le même nom de stack, `portainer`, pour mettre à jour le service :
+
+```bash
+docker compose cp portainer-agent-stack.traefik.yml manager:/home/manager/
+docker compose exec manager docker stack deploy --with-registry-auth -c /home/manager/portainer-agent-stack.traefik.yml portainer
+docker compose exec manager docker stack services portainer
+```
+
+<p align="center">
+  <img src="screenshots/td3-17-portainer-traefik.png" alt="Mise à jour de la stack Portainer avec Traefik">
+</p>
+
+- `stack deploy` affiche `Updating service` pour les 2 services : la stack est mise à jour, pas recréée.
+- Les 2 services sont de nouveau au complet : `4/4` pour les agents, `1/1` pour Portainer.
