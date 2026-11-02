@@ -662,3 +662,37 @@ docker compose exec manager ls /home/manager
 
 - Après la recréation du manager, `docker node ls` affiche toujours les 4 nœuds `Ready` : le cluster n'a pas été perdu.
 - `docker compose cp` copie le fichier de la machine vers le conteneur, et `ls` confirme que `hello-world.compose.yml` est bien dans `/home/manager`.
+
+### Redémarrage du cluster
+
+Après un redémarrage de la machine, les 4 conteneurs étaient arrêtés. On les relance :
+
+```bash
+docker compose start
+docker compose exec manager docker node ls
+```
+
+![Nœuds injoignables après le redémarrage](screenshots/td2-07-restart-nodes-unknown.png)
+
+> **Problème rencontré :** après le redémarrage, `node1`, `node2` et `node3` restent `Unknown`, puis passent à `Down`.
+> <br/>Les conteneurs ont reçu de **nouvelles adresses IP** (le manager est passé de `172.19.0.5` à `172.19.0.2`). Or Swarm enregistre l'adresse IP du manager, pas son nom : les nœuds cherchaient encore le manager à l'ancienne adresse.
+> <br/>**Solution :** quitter l'ancien cluster et le recréer, avec les mêmes commandes qu'aux questions 2.2 et 2.3.
+
+```bash
+docker compose exec node1 docker swarm leave --force
+docker compose exec node2 docker swarm leave --force
+docker compose exec node3 docker swarm leave --force
+docker compose exec manager docker swarm leave --force
+
+docker compose exec manager docker swarm init
+TOKEN=$(docker compose exec manager docker swarm join-token -q worker)
+docker compose exec node1 docker swarm join --token $TOKEN manager:2377
+docker compose exec node2 docker swarm join --token $TOKEN manager:2377
+docker compose exec node3 docker swarm join --token $TOKEN manager:2377
+
+docker compose exec manager docker node ls
+```
+
+![Cluster recréé](screenshots/td2-08-swarm-rebuild.png)
+
+Le cluster est recréé : les 4 nœuds sont de nouveau `Ready`, et `manager` est `Leader`.
