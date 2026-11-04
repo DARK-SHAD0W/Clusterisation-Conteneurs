@@ -1612,3 +1612,109 @@ Comme au TD3, on ajoute les 3 adresses de l'exercice dans le fichier hosts de Wi
 <p align="center">
   <img src="screenshots/td4-11-hosts.png" alt="Les 3 adresses ajoutées au fichier hosts">
 </p>
+
+## Exercice 1 : déployer des logiciels
+
+### 1.1 Dozzle avec un utilisateur simple
+
+**Dozzle** est une interface web qui affiche en direct les logs des conteneurs.
+<br/>En mode Swarm, il en faut un sur chaque nœud (`mode: global`). Ils se retrouvent entre eux par un réseau overlay, et chacun montre alors les logs de **tout le cluster**.
+
+Pour l'authentification simple, la documentation de Dozzle demande un fichier `users.yml`, rangé dans `/data`. Le mot de passe y est stocké sous forme d'empreinte, que Dozzle sait générer lui-même :
+
+```bash
+docker run --rm amir20/dozzle generate admin --password dozzle-admin-2026 --name "Admin"
+```
+
+<p align="center">
+  <img src="screenshots/td4-12-dozzle-users.png" alt="Génération du fichier users.yml">
+</p>
+
+Le mot de passe n'apparaît pas en clair : `$2a$11$…` est son empreinte **bcrypt**.
+
+**Le secret, dans Portainer.** Comme le demande l'énoncé, on crée cette fois le secret depuis Portainer : **Secrets**, puis **Add secret**. On le nomme `dozzle_users` et on colle le contenu généré :
+
+<p align="center">
+  <img src="screenshots/td4-13-portainer-secret-form.png" alt="Création du secret dozzle_users dans Portainer">
+</p>
+
+L'option **Encode secret** reste activée : Portainer encode lui-même le texte avant de l'envoyer à Docker.
+
+<p align="center">
+  <img src="screenshots/td4-14-portainer-secrets.png" alt="Le secret dozzle_users dans la liste des secrets">
+</p>
+
+`dozzle_users` apparaît à côté de `swarm_localhost_key`, créé plus haut en ligne de commande : pour Swarm, c'est exactement la même chose.
+
+**La stack**, `swarm/dozzle.stack.yml` :
+
+```yaml
+services:
+  dozzle:
+    image: amir20/dozzle:latest
+    environment:
+      DOZZLE_MODE: swarm # one Dozzle per node, they find each other on the "dozzle" network
+      DOZZLE_AUTH_PROVIDER: simple # login form, users read from /data/users.yml
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - dozzle_data:/data
+    secrets:
+      - source: dozzle_users
+        target: /data/users.yml # where Dozzle looks for its users
+    networks:
+      - dozzle
+      - web
+    deploy:
+      mode: global # one task on each node, to read the logs of every node
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.dozzle.rule=Host(`dozzle.swarm.localhost`)"
+        - "traefik.http.routers.dozzle.entrypoints=websecure"
+        - "traefik.http.services.dozzle.loadbalancer.server.port=8080"
+        # always send a browser to the same Dozzle task, so its login session stays valid
+        - "traefik.http.services.dozzle.loadbalancer.sticky.cookie=true"
+
+networks:
+  dozzle:
+    driver: overlay
+  web:
+    external: true
+
+volumes:
+  dozzle_data:
+
+secrets:
+  dozzle_users:
+    external: true # created in Portainer
+```
+
+- Le secret est monté à l'endroit où Dozzle cherche ses utilisateurs, `/data/users.yml`, grâce à `target`.
+- `external: true` : le secret a été créé dans Portainer, la stack ne fait que l'utiliser.
+- Le routeur passe par `websecure` : Dozzle est servi en HTTPS.
+- `sticky.cookie` : chaque Dozzle crée sa propre clé de session au démarrage (`Generated a new session secret` dans ses logs). Sans ce cookie, Traefik répartit les requêtes entre les 4 Dozzle, et on perd sa connexion dès qu'on tombe sur un autre nœud.
+
+```bash
+docker compose cp dozzle.stack.yml manager:/home/manager/
+docker compose exec manager docker stack deploy -c /home/manager/dozzle.stack.yml dozzle
+docker compose exec manager docker service ps dozzle_dozzle
+```
+
+<p align="center">
+  <img src="screenshots/td4-15-dozzle-deploy.png" alt="Déploiement de Dozzle, une tâche par nœud">
+</p>
+
+Une tâche Dozzle tourne sur chacun des 4 nœuds.
+
+**Dans le navigateur**, https://dozzle.swarm.localhost demande de se connecter :
+
+<p align="center">
+  <img src="screenshots/td4-16-dozzle-login.png" alt="Page de connexion de Dozzle">
+</p>
+
+Avec `admin` et son mot de passe, on arrive sur l'accueil :
+
+<p align="center">
+  <img src="screenshots/td4-17-dozzle-home.png" alt="Accueil de Dozzle avec les 4 nœuds">
+</p>
+
+On retrouve les **4 hôtes** du cluster (`manager`, `node1`, `node2`, `node3`), et les services de nos stacks : `dozzle`, `portainer` et `traefik`. Un clic sur un service affiche ses logs en direct.

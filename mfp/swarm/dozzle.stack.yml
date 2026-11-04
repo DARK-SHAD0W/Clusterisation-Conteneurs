@@ -1,0 +1,39 @@
+# Dozzle (TD4 ex. 1.1): live logs of every container of the cluster, on dozzle.swarm.localhost.
+# Simple login: the users file (users.yml) is a swarm secret created in Portainer.
+services:
+  dozzle:
+    image: amir20/dozzle:latest
+    environment:
+      DOZZLE_MODE: swarm # one Dozzle per node, they find each other on the "dozzle" network
+      DOZZLE_AUTH_PROVIDER: simple # login form, users read from /data/users.yml
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - dozzle_data:/data
+    secrets:
+      - source: dozzle_users
+        target: /data/users.yml # where Dozzle looks for its users
+    networks:
+      - dozzle
+      - web
+    deploy:
+      mode: global # one task on each node, to read the logs of every node
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.dozzle.rule=Host(`dozzle.swarm.localhost`)"
+        - "traefik.http.routers.dozzle.entrypoints=websecure"
+        - "traefik.http.services.dozzle.loadbalancer.server.port=8080"
+        # always send a browser to the same Dozzle task, so its login session stays valid
+        - "traefik.http.services.dozzle.loadbalancer.sticky.cookie=true"
+
+networks:
+  dozzle:
+    driver: overlay
+  web:
+    external: true
+
+volumes:
+  dozzle_data:
+
+secrets:
+  dozzle_users:
+    external: true # created in Portainer
