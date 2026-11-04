@@ -1,25 +1,19 @@
 % TD 4 : secrets et configs Docker Swarm
 \td{4}{Secrets et configs Docker Swarm}
 
-Swarm garde lui-même les secrets (informations sensibles, ni lisibles ni modifiables une fois créés) et les configs (fichiers lisibles mais non modifiables), et les monte comme des fichiers dans les conteneurs, quel que soit leur nœud. J'ai lancé toutes les commandes depuis le dossier \code{swarm/}.
+Swarm garde lui-même les secrets (informations sensibles, ni lisibles ni modifiables une fois créés) et les configs (fichiers lisibles mais non modifiables), et les monte comme des fichiers dans les conteneurs, quel que soit leur nœud.
 
 % ======================================================================
 \prerequis{relancer le cluster et passer en HTTPS}
 
 \subsection{Relancer le cluster}
 
-J'ai publié le port 443 du manager, pour que Traefik réponde aussi en HTTPS.
-
 \begin{fichier}{swarm/compose.yml}
   manager:
-    image: docker:dind
-    hostname: manager
-    privileged: true
+    # ...
     ports:
       - "80:80" # Traefik, reachable from the host browser
       - "443:443" # Traefik HTTPS (TD4: Authelia only works over https)
-    volumes:
-      - /home/manager
 \end{fichier}
 
 \begin{commandes}
@@ -28,7 +22,7 @@ docker compose ps
 docker compose exec manager docker node ls
 \end{commandes}
 
-\probleme{Le manager a été recréé pour ajouter le port 443 et les conteneurs ont changé d'adresse IP : \code{node1}, \code{node2} et \code{node3} étaient \code{Down}.}{J'ai fait quitter le swarm aux 4 nœuds, puis j'ai reconstruit le cluster avec un nouveau jeton.}
+\probleme{Le manager, recréé pour le port 443, avait changé d'adresse IP : \code{node1}, \code{node2} et \code{node3} étaient \code{Down}.}{J'ai fait quitter le swarm aux 4 nœuds, puis j'ai reconstruit le cluster.}
 
 \begin{commandes}
 docker compose exec node1 docker swarm leave --force
@@ -45,11 +39,12 @@ docker compose exec node3 docker swarm join --token $TOKEN manager:2377
 docker compose exec manager docker node ls
 \end{commandes}
 
-Les 4 nœuds sont revenus \code{Ready}. Le réseau \code{web}, Traefik et Portainer ont disparu avec l'ancien cluster : je les ai redéployés plus loin.
+Le réseau \code{web} et les stacks ont disparu avec l'ancien cluster ; les volumes, eux, sont restés sur les nœuds.
 
+\Needspace{5cm}
 \subsection{Créer le certificat}
 
-Authelia refuse une adresse en \code{http://}. J'ai donc créé une autorité de certification (CA) locale et un certificat \code{*.swarm.localhost} signé par elle.
+Authelia refuse une adresse en \code{http://}. J'ai donc créé une CA locale, ajoutée aux autorités de confiance de Windows, et un certificat \code{*.swarm.localhost} signé par elle.
 
 \begin{commandes}
 mkdir -p certs
@@ -58,30 +53,14 @@ openssl req -newkey rsa:2048 -noenc -subj "/CN=*.swarm.localhost" -keyout certs/
 openssl x509 -req -in certs/swarm.localhost.csr -CA certs/ca.crt -CAkey certs/ca.key -CAcreateserial -days 365 -extfile <(printf "subjectAltName=DNS:*.swarm.localhost,DNS:swarm.localhost") -out certs/swarm.localhost.crt
 ls certs
 openssl verify -CAfile certs/ca.crt certs/swarm.localhost.crt
-\end{commandes}
-
-\capture[0.32\textheight]{td4-03-certs.png}{La CA et le certificat sont créés dans \code{certs/}. \code{openssl verify} répond \code{OK} : le certificat est bien signé par ma CA.}
-
-J'ai ajouté la CA aux autorités de confiance de Windows, pour que le navigateur accepte le certificat.
-
-\begin{commandes}
 certutil.exe -user -addstore Root "$(wslpath -w certs/ca.crt)"
 \end{commandes}
 
+\capture[0.32\textheight]{td4-03-certs.png}{\code{openssl verify} répond \code{OK} : le certificat est signé par ma CA.}
+
 \subsection{Le certificat dans le cluster : un secret et des configs}
 
-La clé privée va dans un secret. Le certificat et \code{traefik-tls.yml}, qui donne à Traefik son certificat par défaut, vont dans des configs.
-
-\begin{fichier}{swarm/traefik-tls.yml}
-tls:
-  stores:
-    default:
-      defaultCertificate:
-        certFile: /certs/swarm.localhost.crt # config swarm_localhost_crt
-        keyFile: /run/secrets/swarm.localhost.key # secret swarm_localhost_key
-\end{fichier}
-
-J'ai recréé le réseau \code{web}, puis les 2 configs et le secret.
+La clé privée est sensible et va dans un secret. Le certificat, public, et \code{traefik-tls.yml}, qui désigne ce certificat à Traefik, vont dans des configs.
 
 \begin{commandes}
 docker compose exec manager docker network create --driver overlay web
@@ -90,31 +69,19 @@ docker compose exec -T manager docker config create traefik_tls - < traefik-tls.
 docker compose exec -T manager docker secret create swarm_localhost_key - < certs/swarm.localhost.key
 docker compose exec manager docker config ls
 docker compose exec manager docker secret ls
-\end{commandes}
-
-J'ai ensuite inspecté une config et un secret pour comparer.
-
-\begin{commandes}
 docker compose exec manager docker config inspect --pretty traefik_tls
 docker compose exec manager docker secret inspect --pretty swarm_localhost_key
 \end{commandes}
 
-\capture[0.32\textheight]{td4-06-inspect-config-secret.png}{La config \code{traefik_tls} affiche son contenu (\code{Data}). Le secret \code{swarm_localhost_key} n'affiche que son nom et ses dates.}
+\capture[0.32\textheight]{td4-06-inspect-config-secret.png}{La config affiche son contenu (\code{Data}), le secret seulement son nom et ses dates.}
 
 \subsection{Traefik en HTTPS}
 
-La stack reprend celle du TD 3, avec un point d'entrée \code{websecure} sur le port 443. Les configs et le secret y arrivent sous forme de fichiers.
-
 \begin{fichier}{swarm/traefik-https.stack.yml}
-services:
-  traefik:
     networks:
       web:
         aliases:
           - authelia.swarm.localhost
-    ports:
-      - 80:80 # HTTP
-      - 443:443 # HTTPS
     configs:
       - source: traefik_tls
         target: /etc/traefik/tls.yml
@@ -126,31 +93,19 @@ services:
     command:
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.websecure.http.tls=true"
-      - "--providers.file.filename=/etc/traefik/tls.yml"
-    deploy:
-      labels:
-        - "traefik.http.routers.to-https.rule=HostRegexp(`.+`)"
-        - "traefik.http.middlewares.to-https.redirectscheme.scheme=https"
 \end{fichier}
 
 \begin{commandes}
 docker compose cp traefik-https.stack.yml manager:/home/manager/
 docker compose exec manager docker stack deploy -c /home/manager/traefik-https.stack.yml traefik
 docker compose exec manager docker service ls
-\end{commandes}
-
-J'ai testé depuis WSL, en donnant ma CA à \code{curl} avec \code{--cacert}.
-
-\begin{commandes}
 curl -s --cacert certs/ca.crt https://whoami.swarm.localhost | head -4
 curl -sI http://dozzle.swarm.localhost | head -2
 \end{commandes}
 
-\capture{td4-08-https-test.png}{\code{whoami} répond en HTTPS avec mon certificat. Une adresse sans routeur http, comme Dozzle, est redirigée vers \code{https://} par le routeur \code{to-https}.}
+\capture{td4-08-https-test.png}{\code{whoami} répond en HTTPS avec mon certificat, et une adresse http sans routeur est redirigée vers \code{https://}.}
 
 \subsection{Relancer Portainer et ajouter les adresses}
-
-J'ai redéployé la stack Portainer du TD 3 sans la modifier.
 
 \begin{commandes}
 docker compose exec manager docker volume ls
@@ -159,9 +114,9 @@ docker compose exec manager docker stack deploy -c /home/manager/portainer-agent
 docker compose exec manager docker service ls
 \end{commandes}
 
-Le volume \code{portainer_portainer_data} est resté sur le manager : Portainer a retrouvé son compte \code{admin}. J'ai ensuite ajouté les 3 adresses de l'exercice au fichier hosts de Windows.
+Le volume \code{portainer_portainer_data} est resté sur le manager : Portainer a retrouvé son compte \code{admin}.
 
-\begin{fichier}[text]{hosts}
+\begin{fichier}[text]{hosts (Windows)}
 127.0.0.1 dozzle.swarm.localhost
 127.0.0.1 authelia.swarm.localhost
 127.0.0.1 outline.swarm.localhost
@@ -172,11 +127,7 @@ Le volume \code{portainer_portainer_data} est resté sur le manager : Portainer 
 
 \subsection{Dozzle avec un utilisateur simple}
 
-Dozzle affiche en direct les logs des conteneurs. En mode Swarm, un Dozzle tourne sur chaque nœud et chacun montre les logs de tout le cluster.
-
 \subsubsection{Le fichier users.yml}
-
-Dozzle lit ses utilisateurs dans \code{/data/users.yml} et génère lui-même l'empreinte du mot de passe.
 
 \begin{commandes}
 docker run --rm amir20/dozzle generate admin --password dozzle-admin-2026 --name "Admin"
@@ -184,40 +135,18 @@ docker run --rm amir20/dozzle generate admin --password dozzle-admin-2026 --name
 
 \subsubsection{Le secret, créé dans Portainer}
 
-Comme le demande l'énoncé, j'ai créé ce secret dans Portainer (menu « Secrets », puis « Add secret »), en y collant le fichier généré.
-
-\capture[0.36\textheight]{td4-13-portainer-secret-form.png}{Création du secret \code{dozzle_users} dans Portainer. Le mot de passe n'y figure que sous forme d'empreinte bcrypt.}
+\capture[0.36\textheight]{td4-13-portainer-secret-form.png}{Le secret \code{dozzle_users} ne contient que l'empreinte bcrypt du mot de passe.}
 
 \subsubsection{La stack}
 
-Le secret est monté là où Dozzle cherche ses utilisateurs. Le mode \code{global} place une tâche sur chaque nœud.
-
 \begin{fichier}{swarm/dozzle.stack.yml}
-services:
-  dozzle:
-    image: amir20/dozzle:latest
     environment:
       DOZZLE_MODE: swarm # one Dozzle per node, they find each other on the "dozzle" network
       DOZZLE_AUTH_PROVIDER: simple # login form, users read from /data/users.yml
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - dozzle_data:/data
+    # ...
     secrets:
       - source: dozzle_users
         target: /data/users.yml # where Dozzle looks for its users
-    networks:
-      - dozzle
-      - web
-    deploy:
-      mode: global # one task on each node, to read the logs of every node
-      labels:
-        - "traefik.http.routers.dozzle.entrypoints=websecure"
-        # always send a browser to the same Dozzle task, so its login session stays valid
-        - "traefik.http.services.dozzle.loadbalancer.sticky.cookie=true"
-
-secrets:
-  dozzle_users:
-    external: true # created in Portainer
 \end{fichier}
 
 \begin{commandes}
@@ -228,15 +157,16 @@ docker compose exec manager docker service ps dozzle_dozzle
 
 \subsubsection{Test dans le navigateur}
 
-\capture{td4-17-dozzle-home.png}{Connecté à \code{dozzle.swarm.localhost} avec le compte \code{admin}. Dozzle affiche les 4 nœuds du cluster et les services de mes stacks.}
+\capture{td4-17-dozzle-home.png}{Connecté avec le compte \code{admin}, Dozzle montre les logs des 4 nœuds du cluster.}
 
 \subsection{Authelia et connexion OpenID Connect}
 
-Avec OpenID Connect, Dozzle n'a plus de comptes : il envoie le navigateur sur Authelia, qui vérifie le mot de passe et lui renvoie un jeton signé.
+Avec OpenID Connect, Dozzle n'a plus de comptes : Authelia vérifie le mot de passe et lui renvoie un jeton signé.
 
+\Needspace{5cm}
 \subsubsection{Les clés d'Authelia}
 
-J'ai généré 4 clés aléatoires et une clé RSA directement dans des secrets, sans les écrire sur le disque. J'ai aussi mis ma CA dans la config \code{swarm_ca}.
+Les clés passent directement d'\code{openssl} à Swarm, sans être écrites sur le disque.
 
 \begin{commandes}
 for s in authelia_jwt_secret authelia_session_secret authelia_storage_key authelia_oidc_hmac; do openssl rand -hex 32 | docker compose exec -T manager docker secret create $s -; done
@@ -247,19 +177,17 @@ docker compose exec manager docker secret ls
 
 \subsubsection{Le compte dans un secret}
 
-J'ai rangé le compte dans \code{secrets/users_database.yml}, avec l'empreinte argon2 de son mot de passe générée par Authelia.
-
 \begin{commandes}
 docker run --rm authelia/authelia:4.39 authelia crypto hash generate argon2 --password 'ahmed-authelia-2026'
 cat secrets/users_database.yml
 docker compose exec -T manager docker secret create authelia_users - < secrets/users_database.yml
 \end{commandes}
 
-\capture[0.24\textheight]{td4-19-authelia-users.png}{Le compte \code{ahmed}, membre du groupe \code{admins}, devient le secret \code{authelia_users}.}
+\capture[0.24\textheight]{td4-19-authelia-users.png}{Le compte \code{ahmed}, du groupe \code{admins}, devient le secret \code{authelia_users}.}
 
 \subsubsection{Le client OIDC de Dozzle}
 
-Dozzle a besoin du client secret en clair : il va dans le secret \code{dozzle_oidc_secret}. Authelia n'en garde que l'empreinte.
+Dozzle a besoin du client secret en clair, dans un secret. Authelia n'en garde que l'empreinte, dans sa configuration.
 
 \begin{commandes}
 openssl rand -hex 36 | tr -d "\n" > secrets/dozzle_oidc_secret
@@ -267,64 +195,38 @@ docker run --rm authelia/authelia:4.39 authelia crypto hash generate pbkdf2 --va
 docker compose exec -T manager docker secret create dozzle_oidc_secret - < secrets/dozzle_oidc_secret
 \end{commandes}
 
-\Needspace{5cm}
 \subsubsection{La configuration dans une config}
 
-La configuration d'Authelia ne contient aucune valeur secrète : elle va donc dans une config. La clé OIDC y est lue dans son secret au démarrage.
+La configuration d'Authelia ne contient aucune valeur secrète : elle peut donc aller dans une config.
 
 \begin{fichier}{swarm/authelia.configuration.yml}
-# The accounts: the users_database.yml file is the swarm secret authelia_users
-authentication_backend:
-  file:
-    path: '/config/users_database.yml'
-    watch: false
-
 session:
   cookies:
     - domain: 'swarm.localhost'
       authelia_url: 'https://authelia.swarm.localhost'
-
-identity_providers:
-  oidc:
-    jwks:
-      - key: {{ secret "/run/secrets/authelia_oidc_key" | mindent 10 "|" | msquote }}
+# ...
     clients:
       - client_id: 'dozzle'
-        client_name: 'Dozzle'
-        # pbkdf2 digest of the secret stored in the swarm secret dozzle_oidc_secret
         client_secret: '$pbkdf2-sha512$310000$zQ.7CBa0mgiu8k8Zm3dTBA$cliYtETUut.EYaAb1C1x5G0d8nJ7TBDq3ewmffU1bvgb/PbES0giHXdRx6Acqbgoa0V8yBz2Wk12VnIo7jdzLg'
-        authorization_policy: 'one_factor'
         redirect_uris:
           - 'https://dozzle.swarm.localhost/api/auth/callback'
-        token_endpoint_auth_method: 'client_secret_basic'
 \end{fichier}
 
 \subsubsection{Le déploiement}
 
-La config est montée en \code{/config/configuration.yml} et le compte en \code{/config/users_database.yml}. Les autres secrets arrivent dans \code{/run/secrets/}, lus par les variables \code{_FILE}.
-
 \begin{fichier}{swarm/authelia.stack.yml}
-services:
-  authelia:
-    image: authelia/authelia:4.39
     environment:
-      X_AUTHELIA_CONFIG: /config/configuration.yml
-      X_AUTHELIA_CONFIG_FILTERS: template # enables {{ secret "..." }} in the configuration
-      AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE: /run/secrets/authelia_jwt_secret
       AUTHELIA_SESSION_SECRET_FILE: /run/secrets/authelia_session_secret
       AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE: /run/secrets/authelia_storage_key
-      AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET_FILE: /run/secrets/authelia_oidc_hmac
+      # ...
     configs:
       - source: authelia_config
         target: /config/configuration.yml
     secrets:
       - source: authelia_users
         target: /config/users_database.yml # the account(s)
-      - authelia_jwt_secret
       - authelia_session_secret
-      - authelia_storage_key
-      - authelia_oidc_hmac
-      - authelia_oidc_key # private key that signs the OpenID Connect tokens
+      # ...
 \end{fichier}
 
 \begin{commandes}
@@ -335,30 +237,24 @@ docker compose exec manager docker service ls --filter name=authelia
 docker compose exec manager docker service logs --raw authelia_authelia 2>&1 | tail -4
 \end{commandes}
 
-\capture[0.3\textheight]{td4-21-authelia-deploy.png}{Le service \code{authelia_authelia} est à \code{1/1}. Ses logs se terminent par \code{Startup complete}.}
+\capture[0.3\textheight]{td4-21-authelia-deploy.png}{Authelia démarre avec sa config et ses secrets (\code{Startup complete}).}
 
+\Needspace{8cm}
 \subsubsection{Brancher Dozzle sur Authelia}
 
-Dozzle appelle lui-même \code{https://authelia.swarm.localhost}. L'alias de Traefik sur le réseau \code{web} lui donne ce nom, et la config \code{swarm_ca} lui fait accepter mon certificat.
+Dozzle appelle lui-même \code{https://authelia.swarm.localhost} : l'alias de Traefik sur le réseau \code{web} lui donne ce nom, et la config \code{swarm_ca} lui fait accepter mon certificat.
 
 \begin{fichier}{swarm/dozzle.oidc.stack.yml}
-services:
-  dozzle:
-    image: amir20/dozzle:latest
     environment:
-      DOZZLE_MODE: swarm
       DOZZLE_AUTH_PROVIDER: oidc # Authelia owns the accounts, users.yml is no longer read
       DOZZLE_AUTH_OIDC_ISSUER: https://authelia.swarm.localhost
       DOZZLE_AUTH_OIDC_CLIENT_ID: dozzle
       DOZZLE_AUTH_OIDC_CLIENT_SECRET_FILE: /run/secrets/dozzle_oidc_secret
-      DOZZLE_AUTH_OIDC_NAME: Authelia # label of the login button
-      # trust our local CA, to call https://authelia.swarm.localhost from the container
       SSL_CERT_FILE: /certs/ca.crt
+    # ...
     configs:
       - source: swarm_ca
         target: /certs/ca.crt
-    secrets:
-      - dozzle_oidc_secret # plain client secret (Authelia only keeps its digest)
 \end{fichier}
 
 \begin{commandes}
@@ -368,44 +264,31 @@ docker compose exec manager docker service ps dozzle_dozzle --filter desired-sta
 docker compose exec manager docker service logs --raw --since 2m dozzle_dozzle 2>&1 | grep -iE 'oidc|auth|error|fatal' | head -8
 \end{commandes}
 
-\capture[0.34\textheight]{td4-24-dozzle-oidc-deploy.png}{Le service Dozzle est mis à jour sur les 4 nœuds. Ses logs indiquent \code{Using OpenID Connect authentication}, avec Authelia comme émetteur.}
+\capture[0.34\textheight]{td4-24-dozzle-oidc-deploy.png}{Les logs confirment le mode OpenID Connect, avec Authelia comme émetteur.}
 
 \subsubsection{Rôles manquants et mise à jour de la config}
 
-\probleme{Au retour d'Authelia, la connexion à Dozzle échouait avec \code{no roles claim found in the ID token}.}{J'ai fait calculer par Authelia un attribut \code{dozzle_roles} à partir des groupes, envoyé dans le jeton quand Dozzle demande ce scope.}
+\probleme{Au retour d'Authelia, Dozzle refusait la connexion : \code{no roles claim found in the ID token}.}{Authelia calcule maintenant un attribut \code{dozzle_roles} à partir des groupes, que Dozzle demande avec \code{DOZZLE_AUTH_OIDC_SCOPES: dozzle_roles}.}
 
 \begin{fichier}{swarm/authelia.configuration.yml}
-# Dozzle refuses a login without roles: members of the "admins" group get every role
 definitions:
   user_attributes:
     dozzle_roles:
       expression: '"admins" in groups ? ["all"] : []'
-
-identity_providers:
-  oidc:
-    # the dozzle_roles claim, sent in the ID token when the client asks for the dozzle_roles scope
+# ...
     claims_policies:
       dozzle:
         id_token: ['dozzle_roles']
         custom_claims:
           dozzle_roles: {}
-    scopes:
-      dozzle_roles:
-        claims: ['dozzle_roles']
-    clients:
-      - client_id: 'dozzle'
-        # ...
+    # ...
         claims_policy: 'dozzle'
-        scopes:
-          # ...
-          - 'dozzle_roles'
 \end{fichier}
 
-\begin{fichier}{swarm/dozzle.oidc.stack.yml}
-      DOZZLE_AUTH_OIDC_SCOPES: dozzle_roles # ask Authelia for the dozzle_roles claim
-\end{fichier}
+\Needspace{6cm}
+Une config ne se modifie pas : je l'ai supprimée puis recréée.
 
-Une config ne se modifie pas : je l'ai supprimée puis recréée avec le nouveau fichier.
+\probleme{Le premier \code{config rm} a été refusé, car la config était utilisée par le service \code{authelia_authelia}.}{J'ai d'abord retiré la stack \code{authelia}, ce qui ne touche pas son volume.}
 
 \begin{commandes}
 docker compose exec manager docker config rm authelia_config
@@ -414,13 +297,6 @@ docker compose exec manager docker config rm authelia_config
 docker compose exec -T manager docker config create authelia_config - < authelia.configuration.yml
 docker compose exec manager docker stack deploy -c /home/manager/authelia.stack.yml authelia
 docker compose exec manager docker service ls --filter name=authelia
-\end{commandes}
-
-\probleme{Le premier \code{config rm} a été refusé, car la config était utilisée par le service \code{authelia_authelia}.}{J'ai d'abord retiré la stack \code{authelia}, puis j'ai supprimé et recréé la config avant de redéployer.}
-
-J'ai aussi redéployé Dozzle, pour sa nouvelle variable.
-
-\begin{commandes}
 docker compose cp dozzle.oidc.stack.yml manager:/home/manager/
 docker compose exec manager docker stack deploy -c /home/manager/dozzle.oidc.stack.yml dozzle
 docker compose exec manager docker service ls --filter name=dozzle
@@ -428,17 +304,15 @@ docker compose exec manager docker service ls --filter name=dozzle
 
 \subsubsection{Résultat}
 
-\capture[0.29\textheight]{td4-29-authelia-consent.png}{La demande de consentement d'Authelia contient maintenant le scope \code{dozzle_roles}.}
+\capture[0.29\textheight]{td4-29-authelia-consent.png}{Le scope \code{dozzle_roles} fait maintenant partie de la demande.}
 
-\capture{td4-30-dozzle-oidc-user.png}{Je suis connecté à Dozzle en tant qu'Ahmed (\code{ahmed@swarm.localhost}), le compte du secret \code{authelia_users} vérifié par Authelia.}
+\capture{td4-30-dozzle-oidc-user.png}{Connecté à Dozzle en tant qu'Ahmed, le compte du secret \code{authelia_users}.}
 
 \subsection{Bonus : Outline}
 
-Outline est un wiki d'équipe. Il utilise PostgreSQL et Redis, et se connecte à Authelia par OpenID Connect.
-
 \subsubsection{Les secrets d'Outline}
 
-Outline lit lui aussi ses valeurs sensibles dans des variables \code{_FILE}. Le mot de passe de la base, tiré une seule fois dans \code{PW}, sert à 2 secrets.
+Le mot de passe de PostgreSQL, tiré une seule fois dans \code{PW}, sert à 2 secrets et n'est jamais écrit sur le disque.
 
 \begin{commandes}
 PW=$(openssl rand -hex 24)
@@ -450,35 +324,9 @@ docker run --rm authelia/authelia:4.39 authelia crypto hash generate pbkdf2 --va
 docker compose exec -T manager docker secret create outline_oidc_secret - < secrets/outline_oidc_secret
 \end{commandes}
 
-\Needspace{5cm}
 \subsubsection{Un nouveau client dans Authelia}
 
-J'ai ajouté le client \code{outline} à la configuration d'Authelia, avec l'empreinte de son client secret.
-
-\begin{fichier}{swarm/authelia.configuration.yml}
-      # Bonus: Outline (TD4 ex. 1.3)
-      - client_id: 'outline'
-        client_name: 'Outline'
-        # pbkdf2 digest of the secret stored in the swarm secret outline_oidc_secret
-        client_secret: '$pbkdf2-sha512$310000$wCiCZEIFdWY54dzdbN8SBQ$0Amgl90xzgb7n7V7CaYnJXa1A.l.kXpiReHdVhUukmDlbS27r1pejoF6AYE/oc3/FGQTa74loB8idUZSFWcBLw'
-        public: false
-        authorization_policy: 'one_factor'
-        redirect_uris:
-          - 'https://outline.swarm.localhost/auth/oidc.callback'
-        scopes:
-          - 'openid'
-          - 'offline_access' # Outline uses a refresh token
-          - 'profile'
-          - 'email'
-        response_types:
-          - 'code'
-        grant_types:
-          - 'authorization_code'
-          - 'refresh_token'
-        token_endpoint_auth_method: 'client_secret_post'
-\end{fichier}
-
-Comme le rappelle l'énoncé, la config ne se met pas à jour : je l'ai supprimée puis recréée, cette fois après avoir retiré la stack.
+J'ai ajouté un client \code{outline}, sur le modèle de celui de Dozzle. Comme le rappelle l'énoncé, la config a dû être supprimée puis recréée.
 
 \begin{commandes}
 docker compose exec manager docker stack rm authelia
@@ -488,36 +336,23 @@ docker compose exec manager docker stack deploy -c /home/manager/authelia.stack.
 docker compose exec manager docker service ls --filter name=authelia
 \end{commandes}
 
-\capture[0.3\textheight]{td4-32-authelia-config-outline.png}{La stack étant retirée, \code{config rm} passe du premier coup. Authelia redémarre avec la config recréée.}
+\capture[0.3\textheight]{td4-32-authelia-config-outline.png}{La stack étant retirée d'abord, \code{config rm} passe du premier coup.}
 
-\Needspace{5cm}
 \subsubsection{La stack}
 
-Toutes les valeurs sensibles passent par des variables \code{_FILE}. \code{NODE_EXTRA_CA_CERTS} fait accepter ma CA à Outline, comme \code{SSL_CERT_FILE} pour Dozzle.
-
 \begin{fichier}{swarm/outline.stack.yml}
-services:
-  outline:
     environment:
       SECRET_KEY_FILE: /run/secrets/outline_secret_key
       UTILS_SECRET_FILE: /run/secrets/outline_utils_secret
       DATABASE_URL_FILE: /run/secrets/outline_database_url
-      # login with Authelia (client "outline" in authelia.configuration.yml)
+      # ...
       OIDC_CLIENT_ID: outline
       OIDC_CLIENT_SECRET_FILE: /run/secrets/outline_oidc_secret
-      # trust our local CA, to call https://authelia.swarm.localhost from the container
+      OIDC_AUTH_URI: https://authelia.swarm.localhost/api/oidc/authorization
+      OIDC_TOKEN_URI: https://authelia.swarm.localhost/api/oidc/token
+      OIDC_USERINFO_URI: https://authelia.swarm.localhost/api/oidc/userinfo
+      # ...
       NODE_EXTRA_CA_CERTS: /certs/ca.crt
-    configs:
-      - source: swarm_ca
-        target: /certs/ca.crt
-    secrets:
-      - outline_secret_key
-      - outline_utils_secret
-      - outline_database_url
-      - outline_oidc_secret
-  postgres:
-    environment:
-      POSTGRES_PASSWORD_FILE: /run/secrets/outline_db_password
 \end{fichier}
 
 \begin{commandes}
@@ -533,8 +368,6 @@ docker compose exec manager docker service logs --raw outline_outline 2>&1 | tai
 
 % ======================================================================
 \titresection{Bilan}
-
-Les secrets et les configs créés pendant ce TD :
 
 \begin{center}
 \small
@@ -556,8 +389,8 @@ Nom & Type & Utilisé par & Créé depuis \\
 \end{tabular}
 \end{center}
 
-Une config se relit, un secret jamais, et aucun des deux ne se modifie. La même différence se voit dans Portainer.
+Une config se relit, un secret jamais, et aucun des deux ne se modifie.
 
-\capture{td4-41-portainer-secret-detail.png}{Dans Portainer, le secret \code{dozzle_users} n'affiche que son nom, son ID et ses dates. Le seul bouton est « Delete this secret ».}
+\capture{td4-41-portainer-secret-detail.png}{Le secret \code{dozzle_users} ne montre aucun contenu et ne peut qu'être supprimé.}
 
-\capture[0.62\textheight]{td4-43-portainer-config-detail.png}{La config \code{traefik_tls} affiche son contenu. Pour la changer, Portainer ne propose que « Delete this config » ou « Clone config ».}
+\capture[0.62\textheight]{td4-43-portainer-config-detail.png}{La config \code{traefik_tls} montre son contenu, mais ne peut qu'être supprimée ou clonée.}
