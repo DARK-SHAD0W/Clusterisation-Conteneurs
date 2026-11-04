@@ -12,7 +12,7 @@
 \RequirePackage[a4paper,left=2.2cm,right=2.2cm,top=2.6cm,bottom=2.4cm,headheight=15pt]{geometry}
 \RequirePackage{xcolor}
 \RequirePackage{graphicx}
-\graphicspath{{../mfp/screenshots/}{../voting-app/screenshots/}}
+\graphicspath{{captures/}{../mfp/screenshots/}{../voting-app/screenshots/}}
 \RequirePackage{caption}
 \RequirePackage{titlesec}
 \RequirePackage{titletoc}
@@ -28,6 +28,8 @@
 
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{4pt}
+% noms de fichiers longs en police fixe : on étire les espaces plutôt que de déborder
+\setlength{\emergencystretch}{3em}
 \setlist{itemsep=1pt,topsep=2pt}
 
 % ---------------------------------------------------------------- couleurs : noir et gris uniquement
@@ -63,7 +65,6 @@
 
 % \td{4}{Secrets et configs}       nouveau TD (chapitre)
 % \exercice{2}{Titre}               « Exercice 2 : Titre », questions 2.1, 2.2...
-% \partie{3}{Titre}                 « 3. Titre » (TD1, numéroté par parties)
 % \prerequis{Titre}                 « Prérequis : Titre », questions 0.1, 0.2...
 \newcommand{\td}[2]{%
   \setcounter{chapter}{\numexpr#1-1\relax}%
@@ -75,9 +76,7 @@
 % menait une page trop tôt.
 \newcommand{\rapport@section}[1]{\Needspace{7\baselineskip}\section{#1}}
 \newcommand{\exercice}[2]{\setcounter{section}{\numexpr#1-1\relax}\rapport@section{Exercice #1 : #2}}
-\newcommand{\partie}[2]{\setcounter{section}{\numexpr#1-1\relax}\rapport@section{#1. #2}}
 \newcommand{\prerequis}[1]{\setcounter{section}{-1}\rapport@section{Prérequis : #1}}
-\newcommand{\titresection}[1]{\rapport@section{#1}}
 
 % ---------------------------------------------------------------- titres
 \titleformat{\chapter}[block]{\normalfont\huge\bfseries\color{accent}}{}{0pt}{}[\vspace{4pt}{\color{accent}\titlerule[1pt]}]
@@ -131,43 +130,33 @@
   \end{minipage}\par\medskip}
 
 % ---------------------------------------------------------------- commandes et fichiers
-% \begin{commandes} ... \end{commandes}                      commandes bash
-% \begin{fichier}{swarm/dozzle.stack.yml} ... \end{fichier}  extrait YAML
-% \begin{fichier}[docker]{server/Dockerfile} ... \end{fichier}
+% \begin{commandes} ... \end{commandes}      commandes bash
+% \begin{fichier} ... \end{fichier}          extrait YAML
+% \begin{fichier}[docker] ... \end{fichier}  autre langage
 % Couleurs du thème « Dark+ » de VS Code : style Pygments « vscode » fourni dans
 % pygments-vscode/ (latexmkrc l'ajoute au PYTHONPATH).
+% Pas de retour à la ligne automatique : les lignes longues sont coupées à la
+% main avec « \ », et le journal signale tout dépassement (Overfull \hbox).
 \definecolor{vsfond}{HTML}{1E1E1E}
 \definecolor{vstexte}{HTML}{D4D4D4}
-\definecolor{vsonglet}{HTML}{2D2D2D}
-\definecolor{vstitre}{HTML}{CCCCCC}
 \definecolor{vsbord}{HTML}{3C3C3C}
-\definecolor{vsnumero}{HTML}{858585}
-\renewcommand{\theFancyVerbLine}{\textcolor{vsnumero}{\scriptsize\arabic{FancyVerbLine}}}
 \tcbset{
   codebox/.style={enhanced, breakable, listing only, colback=vsfond, colupper=vstexte,
-    colframe=vsbord, boxrule=0.5pt, arc=2pt, outer arc=2pt, left=8pt, right=6pt, top=4pt, bottom=4pt,
-    fonttitle=\footnotesize\ttfamily, coltitle=vstitre, colbacktitle=vsonglet,
-    toptitle=2pt, bottomtitle=2pt, before skip=6pt, after skip=8pt},
+    colframe=vsbord, boxrule=0.5pt, arc=2pt, outer arc=2pt, left=8pt, right=6pt,
+    top=4pt, bottom=4pt, before skip=6pt, after skip=8pt},
 }
-% « !O » : le titre optionnel doit suivre \begin{commandes} sur la même ligne
-% (sinon une première ligne commençant par # serait lue comme argument)
-\NewTCBListing{commandes}{ !O{Commandes} }{codebox, title={#1},
+\NewTCBListing{commandes}{}{codebox,
   listing engine=minted, minted language=bash, minted style=vscode,
-  minted options={fontsize=\small, breaklines, breakanywhere, autogobble}}
-% Pas de numéros de ligne : les extraits sont coupés (# ...), les numéros ne
-% correspondraient pas à ceux du vrai fichier.
-\NewTCBListing{fichier}{ O{yaml} m }{codebox, title={#2},
+  minted options={fontsize=\small, autogobble}}
+% « !O » : le langage optionnel doit suivre \begin{fichier} sur la même ligne
+% (sinon une première ligne commençant par [ serait lue comme argument)
+\NewTCBListing{fichier}{ !O{yaml} }{codebox,
   listing engine=minted, minted language=#1, minted style=vscode,
-  minted options={fontsize=\small, breaklines, breakanywhere, autogobble}}
+  minted options={fontsize=\small, autogobble}}
 
-% ---------------------------------------------------------------- encadré problème / solution
-% \probleme{Ce qui n'allait pas.}{Ce que j'ai fait.}
-\newcommand{\probleme}[2]{%
-  \begin{tcolorbox}[enhanced, breakable, colback=white, colframe=black!55, boxrule=0.4pt,
-    arc=0pt, outer arc=0pt, left=6pt, before skip=6pt, after skip=8pt]
-  \small\textbf{Problème rencontré :} #1\par\smallskip
-  \textbf{Solution :} #2
-  \end{tcolorbox}}
+% ---------------------------------------------------------------- problème rencontré
+% \probleme{ce qui n'allait pas, puis ce que j'ai fait.}
+\newcommand{\probleme}[1]{\par\smallskip\textbf{Problème rencontré :} #1\par\smallskip}
 
 % ---------------------------------------------------------------- texte
 % \code{nom_de_service}  : texte en police fixe (pas de % ni de # dedans)

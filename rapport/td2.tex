@@ -1,33 +1,23 @@
 % ================================================================ TD 2
 \td{2}{Cluster Docker Swarm}
 
-Dans ce TD, j'ai monté un petit cluster Docker Swarm sur mon PC. Chaque machine du cluster est en fait un conteneur Docker-in-Docker, avec un manager et trois nœuds.
+% ---------------------------------------------------------------- exercice 1
+\exercice{1}{DinD et DooD}
 
-% ---------------------------------------------------------------- prérequis
-\prerequis{images publiées sur un registry}
-
-\subsection{Publier les images avec GitHub Actions}
-
-Swarm ne sait pas construire les images, il faut donc qu'elles soient déjà sur un registry. J'ai écrit deux workflows qui les construisent et les publient sur GHCR à chaque push sur \code{main}.
-
-\begin{fichier}{.github/workflows/build.server.yml}
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/server
-\end{fichier}
-
-\subsection{Vérifier les images sur GHCR}
-
-\capture{td2-00-ghcr-packages.png}{Les deux images sont publiques, donc les nœuds peuvent les télécharger sans se connecter.}
+\begin{itemize}
+  \item DinD : un daemon Docker tourne dans le conteneur (image \code{docker:dind}, lancée en \code{privileged}).
+  \item DooD : le conteneur utilise le daemon de l'hôte, par le socket \code{/var/run/docker.sock} monté en volume.
+  \item Pour tester Swarm, j'ai retenu DinD : un \code{compose.yml} avec 4 conteneurs DinD qui jouent chacun une machine du cluster (exercice 2).
+\end{itemize}
 
 % ---------------------------------------------------------------- exercice 2
 \exercice{2}{Création du cluster Docker Swarm}
 
 \subsection{Créer et lancer les 4 conteneurs DinD}
 
-Les trois nœuds sont déclarés comme le manager. Sans \code{privileged: true}, Docker ne peut pas tourner dans le conteneur.
+Dans \code{swarm/compose.yml}, \code{node1} à \code{node3} sont déclarés comme \code{manager}.
 
-\begin{fichier}{swarm/compose.yml}
+\begin{fichier}
 services:
   manager:
     image: docker:dind
@@ -42,14 +32,14 @@ docker compose up -d
 docker ps
 \end{commandes}
 
-\capture{td2-01-dind-up.png}{Les quatre conteneurs DinD tournent à côté de ceux du TD 1.}
+\capture{td2-01-dind-up.png}{Les 4 conteneurs \code{manager}, \code{node1}, \code{node2} et \code{node3} sont \code{Up}.}
 
 \begin{commandes}
 docker compose exec manager docker ps
 docker compose exec node1 docker ps
 \end{commandes}
 
-Dans les deux conteneurs, \code{docker ps} répond avec une liste vide. Docker marche donc bien à l'intérieur, et chaque machine a le sien.
+\capture{td2-02-dind-docker-ps.png}{\code{docker ps} répond dans les conteneurs, avec une liste vide.}
 
 \subsection{Initialiser le cluster depuis le manager}
 
@@ -57,12 +47,11 @@ Dans les deux conteneurs, \code{docker ps} répond avec une liste vide. Docker m
 docker compose exec manager docker swarm init
 \end{commandes}
 
-Le manager devient le leader du cluster et affiche le token \code{SWMTKN-1-...} dont les workers ont besoin pour rejoindre le cluster.
+\capture{td2-03-swarm-init.png}{Le manager devient leader et affiche le token \code{SWMTKN-1-...} des workers.}
 
-\needspace{6cm}
 \subsection{Faire rejoindre les nœuds comme workers}
 
-Plutôt que de recopier le token à la main, je l'ai mis dans une variable. Les nœuds rejoignent le manager par son nom de service \code{manager:2377}, et pas par son adresse IP.
+J'ai mis le token dans une variable, et les nœuds rejoignent \code{manager:2377}, le nom du service.
 
 \begin{commandes}
 TOKEN=$(docker compose exec manager docker swarm join-token -q worker)
@@ -70,6 +59,8 @@ docker compose exec node1 docker swarm join --token $TOKEN manager:2377
 docker compose exec node2 docker swarm join --token $TOKEN manager:2377
 docker compose exec node3 docker swarm join --token $TOKEN manager:2377
 \end{commandes}
+
+\capture{td2-04-swarm-join.png}{Les 3 nœuds répondent \code{This node joined a swarm as a worker.}}
 
 \subsection{Lister les nœuds depuis le manager}
 
@@ -79,14 +70,14 @@ docker node ls
 exit
 \end{commandes}
 
-\capture{td2-05-node-ls.png}{Le cluster compte bien 4 nœuds \code{Ready}, et le manager est \code{Leader}.}
+\capture{td2-05-node-ls.png}{4 nœuds \code{Ready}, le manager est \code{Leader}.}
 
 % ---------------------------------------------------------------- exercice 3
 \exercice{3}{Tests du cluster}
 
 \subsection{Créer la stack hello-world}
 
-\begin{fichier}{swarm/hello-world.compose.yml}
+\begin{fichier}
 services:
   hello:
     image: hello-world
@@ -94,12 +85,11 @@ services:
       replicas: 2
 \end{fichier}
 
-\needspace{5cm}
 \subsection{Copier la stack dans le manager}
 
-J'ai ajouté un volume anonyme sur \code{/home/manager} pour ne pas perdre la stack si le conteneur est recréé.
+J'ai ajouté le volume anonyme sur \code{/home/manager} dans \code{swarm/compose.yml}.
 
-\begin{fichier}{swarm/compose.yml}
+\begin{fichier}
   manager:
     # ...
     volumes:
@@ -114,20 +104,16 @@ docker compose cp hello-world.compose.yml manager:/home/manager/
 docker compose exec manager ls /home/manager
 \end{commandes}
 
-Même recréé, le manager voyait toujours ses 4 nœuds \code{Ready}.
+Le manager a été recréé et voit toujours ses 4 nœuds \code{Ready}. \code{ls} affiche \code{hello-world.compose.yml}.
 
 \subsection{Déployer la stack et observer les nœuds}
 
-\subsubsection{Relancer le cluster après un redémarrage du PC}
+\probleme{après un redémarrage du PC, les nœuds restaient \code{Down}, car Swarm avait gardé l'ancienne IP du manager. J'ai fait quitter le cluster à toutes les machines et je l'ai recréé.}
 
 \begin{commandes}
 docker compose start
 docker compose exec manager docker node ls
-\end{commandes}
 
-\probleme{Les nœuds restaient \code{Down}, car Swarm avait gardé l'ancienne IP du manager.}{J'ai fait quitter le cluster à toutes les machines et je l'ai recréé.}
-
-\begin{commandes}
 docker compose exec node1 docker swarm leave --force
 docker compose exec node2 docker swarm leave --force
 docker compose exec node3 docker swarm leave --force
@@ -138,23 +124,21 @@ TOKEN=$(docker compose exec manager docker swarm join-token -q worker)
 docker compose exec node1 docker swarm join --token $TOKEN manager:2377
 docker compose exec node2 docker swarm join --token $TOKEN manager:2377
 docker compose exec node3 docker swarm join --token $TOKEN manager:2377
-
 docker compose exec manager docker node ls
 \end{commandes}
 
-\capture{td2-08-swarm-rebuild.png}{Après la recréation, les 4 nœuds sont de nouveau \code{Ready}.}
-
-\subsubsection{Déployer la stack et regarder chaque nœud}
+Les 4 nœuds sont de nouveau \code{Ready}.
 
 \begin{commandes}
-docker compose exec manager docker stack deploy -c /home/manager/hello-world.compose.yml hello
+docker compose exec manager docker stack deploy \
+  -c /home/manager/hello-world.compose.yml hello
 docker compose exec manager docker service ls
 docker compose exec manager docker service ps hello_hello
 \end{commandes}
 
-\capture{td2-09-stack-deploy.png}{Le service \code{hello_hello} reste à \code{0/2} et ses copies passent d'un nœud à l'autre.}
+\capture{td2-09-stack-deploy.png}{\code{hello_hello} reste à \code{0/2}, et ses tâches passent d'un nœud à l'autre.}
 
-Pour comparer, j'ai lancé un service nginx qui reste allumé, et lui affiche bien \code{3/3}.
+Pour comparer, un service nginx qui reste allumé affiche bien \code{3/3}.
 
 \begin{commandes}
 docker compose exec manager docker service create --name web --replicas 3 nginx:alpine
@@ -167,16 +151,15 @@ docker compose exec node2 docker ps -a
 docker compose exec node3 docker ps -a
 \end{commandes}
 
-\capture{td2-10-docker-ps-nodes.png}{Chaque machine a ses propres copies de \code{hello-world}, le manager aussi.}
+\capture{td2-10-docker-ps-nodes.png}{Chaque nœud, manager compris, a ses propres conteneurs \code{hello-world} en \code{Exited (0)}.}
 
-J'en déduis que Swarm répartit les copies sur toutes les machines, manager compris, et que chaque machine ne voit que ses conteneurs. Comme \code{hello-world} s'arrête juste après son message, Swarm en relance sans arrêt pour garder ses 2 copies, d'où le \code{0/2} et tous ces conteneurs \code{Exited (0)}. C'est aussi pour ça que j'ai dû ajouter \code{-a}, sinon \code{docker ps} n'affichait presque rien.
+J'en déduis que Swarm répartit les réplicas sur tous les nœuds, manager compris, et que \code{docker ps} ne montre que les conteneurs du nœud où on le lance. \code{hello-world} s'arrête juste après son message, alors Swarm le relance en boucle : d'où le \code{0/2}, et \code{docker ps} sans \code{-a} n'affiche presque rien.
 
 \subsection{Faire varier la clause deploy}
 
 \subsubsection{Sur le manager seulement (par rôle)}
 
-\begin{fichier}{swarm/hello-world-manager.compose.yml}
-    # ...
+\begin{fichier}
     deploy:
       replicas: 2
       placement:
@@ -187,16 +170,16 @@ J'en déduis que Swarm répartit les copies sur toutes les machines, manager com
 \begin{commandes}
 docker compose exec manager docker stack rm hello
 docker compose cp hello-world-manager.compose.yml manager:/home/manager/
-docker compose exec manager docker stack deploy -c /home/manager/hello-world-manager.compose.yml hello
+docker compose exec manager docker stack deploy \
+  -c /home/manager/hello-world-manager.compose.yml hello
 docker compose exec manager docker service ps hello_hello
 \end{commandes}
 
-\capture{td2-11-stack-manager.png}{Avec la contrainte sur le rôle, toutes les copies tournent sur le manager.}
+\capture{td2-11-stack-manager.png}{Toutes les tâches de \code{hello_hello} tournent sur le manager.}
 
 \subsubsection{Sur tous les nœuds (mode global)}
 
-\begin{fichier}{swarm/hello-world-global.compose.yml}
-    # ...
+\begin{fichier}
     deploy:
       mode: global
 \end{fichier}
@@ -204,9 +187,10 @@ docker compose exec manager docker service ps hello_hello
 \begin{commandes}
 docker compose exec manager docker stack rm hello
 docker compose cp hello-world-global.compose.yml manager:/home/manager/
-docker compose exec manager docker stack deploy -c /home/manager/hello-world-global.compose.yml hello
+docker compose exec manager docker stack deploy \
+  -c /home/manager/hello-world-global.compose.yml hello
 docker compose exec manager docker service ls
 docker compose exec manager docker service ps hello_hello
 \end{commandes}
 
-\capture{td2-12-stack-global.png}{En mode \code{global}, il y a une copie par nœud, sans avoir à donner de nombre de réplicas.}
+\capture{td2-12-stack-global.png}{En mode \code{global}, une tâche par nœud.}
