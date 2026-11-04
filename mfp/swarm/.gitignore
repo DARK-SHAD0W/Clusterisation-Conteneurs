@@ -1,0 +1,3 @@
+# TD4: local certificates, private keys and secret files, never committed
+certs/
+secrets/

@@ -8,6 +8,7 @@ services:
     privileged: true
     ports:
       - "80:80" # Traefik, reachable from the host browser
+      - "443:443" # Traefik HTTPS (TD4: Authelia only works over https)
     volumes:
       - /home/manager
 

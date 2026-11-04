@@ -1,0 +1,8 @@
+# Traefik dynamic configuration (file provider), stored in the swarm as a config.
+# Default certificate for every https router: our local *.swarm.localhost certificate.
+tls:
+  stores:
+    default:
+      defaultCertificate:
+        certFile: /certs/swarm.localhost.crt # config swarm_localhost_crt
+        keyFile: /run/secrets/swarm.localhost.key # secret swarm_localhost_key

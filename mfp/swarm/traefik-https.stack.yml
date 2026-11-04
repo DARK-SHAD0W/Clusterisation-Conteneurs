@@ -1,0 +1,89 @@
+# Traefik with HTTPS (TD4): same stack as traefik.compose.yml, plus a "websecure"
+# entrypoint on 443 that uses our local *.swarm.localhost certificate.
+# The certificate is a swarm config, its private key a swarm secret (both created beforehand).
+services:
+  traefik:
+    image: traefik:v3.6
+    networks:
+      web:
+        aliases:
+          # containers of the cluster (Dozzle, Outline) reach Authelia's https address through Traefik
+          - authelia.swarm.localhost
+    ports:
+      - 80:80 # HTTP
+      - 443:443 # HTTPS
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro # Swarm API socket
+    configs:
+      - source: traefik_tls
+        target: /etc/traefik/tls.yml
+      - source: swarm_localhost_crt
+        target: /certs/swarm.localhost.crt
+    secrets:
+      - source: swarm_localhost_key
+        target: swarm.localhost.key # mounted in /run/secrets/
+    command:
+      # EntryPoints: HTTP on 80, HTTPS on 443
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.websecure.http.tls=true"
+      # Docker Swarm provider
+      - "--providers.swarm.endpoint=unix:///var/run/docker.sock"
+      - "--providers.swarm.watch=true"
+      - "--providers.swarm.exposedbydefault=false"
+      - "--providers.swarm.network=web"
+      # File provider: the default certificate (traefik-tls.yml)
+      - "--providers.file.filename=/etc/traefik/tls.yml"
+      # API & Dashboard
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+      # Observability
+      - "--log.level=INFO"
+      - "--accesslog=true"
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - "traefik.enable=true"
+        # Dashboard router
+        - "traefik.http.routers.dashboard.rule=Host(`traefik.swarm.localhost`)"
+        - "traefik.http.routers.dashboard.entrypoints=web"
+        - "traefik.http.routers.dashboard.service=api@internal"
+        - "traefik.http.services.dashboard.loadbalancer.server.port=8080"
+        # Any other http request is redirected to https (lowest priority, so the
+        # http routers of the TD3 apps still win)
+        - "traefik.http.routers.to-https.rule=HostRegexp(`.+`)"
+        - "traefik.http.routers.to-https.entrypoints=web"
+        - "traefik.http.routers.to-https.priority=1"
+        - "traefik.http.routers.to-https.middlewares=to-https"
+        - "traefik.http.routers.to-https.service=noop@internal"
+        - "traefik.http.middlewares.to-https.redirectscheme.scheme=https"
+
+  whoami:
+    image: traefik/whoami
+    networks:
+      - web
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.whoami.rule=Host(`whoami.swarm.localhost`)"
+        - "traefik.http.routers.whoami.entrypoints=web,websecure"
+        - "traefik.http.services.whoami.loadbalancer.server.port=80"
+
+networks:
+  web:
+    external: true
+
+# Created beforehand with `docker config create` and `docker secret create`
+configs:
+  traefik_tls:
+    external: true
+  swarm_localhost_crt:
+    external: true
+
+secrets:
+  swarm_localhost_key:
+    external: true

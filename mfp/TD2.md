@@ -38,7 +38,7 @@ mfp/
 ├── server/                          # API Node.js / Express / TypeORM
 ├── compose.yml                      # lance la base, le serveur et le client ensemble
 ├── mfp-bruno-api-test-collection/   # collection Bruno pour tester l'API
-├── swarm/                           # cluster Docker Swarm (DinD) et stacks (TD2, TD3)
+├── swarm/                           # cluster Docker Swarm (DinD) et stacks (TD2 à TD4)
 └── screenshots/                     # captures d'écran
 ```
 
@@ -1328,3 +1328,287 @@ Les 3 requêtes répondent `200 OK`, et les 3 tests passent (**PASS**) :
 - `03-my-profile` utilise ce token pour lire le profil.
 
 L'API de MFP tourne donc sur le cluster, et répond depuis le PC à l'adresse `api.swarm.localhost`.
+
+---
+
+# TD4
+
+**Objectif :** utiliser les **secrets** et les **configs** de Docker Swarm.
+<br/>Certaines informations (mots de passe, clés, fichiers de configuration) doivent être lues par des conteneurs qui peuvent tourner sur n'importe quel nœud. Un volume ou un fichier `.env` ne suffit plus : ils restent sur une seule machine.
+<br/>Swarm stocke donc lui-même ces informations, chiffrées, et les monte comme des **fichiers** dans les conteneurs qui en ont besoin :
+- un **secret** sert aux informations sensibles : une fois créé, on ne peut plus ni le lire ni le modifier ;
+- une **config** sert aux fichiers de configuration : on peut la relire, mais pas la modifier. Pour la mettre à jour, il faut en créer une nouvelle.
+
+Toutes les commandes se lancent depuis le dossier `swarm/`.
+
+## Prérequis : relancer le cluster et passer en HTTPS
+
+### Relancer le cluster
+
+On repart du cluster du TD3. Pour cet exercice, Traefik devra aussi répondre en **HTTPS** (on voit pourquoi juste après) : on publie donc aussi le port **443** du manager dans `swarm/compose.yml`.
+
+```yaml
+  manager:
+    image: docker:dind
+    hostname: manager
+    privileged: true
+    ports:
+      - "80:80" # Traefik, reachable from the host browser
+      - "443:443" # Traefik HTTPS (TD4: Authelia only works over https)
+    volumes:
+      - /home/manager
+```
+
+```bash
+docker compose up -d
+docker compose ps
+docker compose exec manager docker node ls
+```
+
+<p align="center">
+  <img src="screenshots/td4-01-cluster-up.png" alt="Le manager recréé avec le port 443, les nœuds Down">
+</p>
+
+`up -d` recrée le manager pour lui ajouter le port 443 (`0.0.0.0:443->443/tcp`).
+<br/>Mais, comme après le redémarrage du TD2, les conteneurs ont changé d'adresse IP : `node1`, `node2` et `node3` sont `Down`. On reconstruit donc le cluster avec les mêmes commandes que dans la partie [Redémarrage du cluster](#redémarrage-du-cluster) :
+
+```bash
+docker compose exec node1 docker swarm leave --force
+docker compose exec node2 docker swarm leave --force
+docker compose exec node3 docker swarm leave --force
+docker compose exec manager docker swarm leave --force
+
+docker compose exec manager docker swarm init
+TOKEN=$(docker compose exec manager docker swarm join-token -q worker)
+docker compose exec node1 docker swarm join --token $TOKEN manager:2377
+docker compose exec node2 docker swarm join --token $TOKEN manager:2377
+docker compose exec node3 docker swarm join --token $TOKEN manager:2377
+
+docker compose exec manager docker node ls
+```
+
+<p align="center">
+  <img src="screenshots/td4-02-swarm-rebuild.png" alt="Cluster reconstruit">
+</p>
+
+Les 4 nœuds sont de nouveau `Ready`, avec `manager` en `Leader`.
+<br/>En quittant l'ancien cluster, on a perdu ses stacks et son réseau `web` : on redéploie Traefik et Portainer plus bas. Les volumes, eux, sont restés sur les nœuds. Les stacks du TD3 (vote et API de MFP) ne servent pas ici, on ne les relance pas.
+
+### Pourquoi HTTPS ?
+
+Authelia (question 1.2) refuse de démarrer si son adresse ne commence pas par `https://`, même pour un test en local : sa session repose sur un cookie sécurisé, qui ne voyage que sur une connexion chiffrée. Or notre Traefik ne parle qu'en HTTP.
+<br/>Un vrai certificat (Let's Encrypt par exemple) n'est délivré que pour un vrai nom de domaine, joignable depuis Internet. On fabrique donc le nôtre :
+1. une petite **autorité de certification** (CA) locale ;
+2. un certificat pour `*.swarm.localhost`, signé par cette CA ;
+3. Windows fait confiance à notre CA : le navigateur accepte alors le certificat, sans avertissement.
+
+### Créer le certificat
+
+```bash
+mkdir -p certs
+openssl req -x509 -newkey rsa:2048 -noenc -days 3650 -subj "/CN=Swarm Local CA" -keyout certs/ca.key -out certs/ca.crt
+openssl req -newkey rsa:2048 -noenc -subj "/CN=*.swarm.localhost" -keyout certs/swarm.localhost.key -out certs/swarm.localhost.csr
+openssl x509 -req -in certs/swarm.localhost.csr -CA certs/ca.crt -CAkey certs/ca.key -CAcreateserial -days 365 -extfile <(printf "subjectAltName=DNS:*.swarm.localhost,DNS:swarm.localhost") -out certs/swarm.localhost.crt
+ls certs
+openssl verify -CAfile certs/ca.crt certs/swarm.localhost.crt
+```
+
+<p align="center">
+  <img src="screenshots/td4-03-certs.png" alt="Création de la CA et du certificat *.swarm.localhost">
+</p>
+
+- `ca.crt` et `ca.key` : notre autorité de certification.
+- `swarm.localhost.crt` et `swarm.localhost.key` : le certificat et sa clé privée, valables pour toutes les adresses en `.swarm.localhost` (c'est le rôle du `*`).
+- `openssl verify` répond `OK` : le certificat est bien signé par notre CA.
+
+Le dossier `certs/` est ignoré par Git (`swarm/.gitignore`) : une clé privée ne doit jamais être publiée.
+
+On ajoute ensuite la CA aux autorités de confiance de Windows, pour l'utilisateur courant. Windows demande une confirmation, qu'on accepte :
+
+```bash
+certutil.exe -user -addstore Root "$(wslpath -w certs/ca.crt)"
+```
+
+<p align="center">
+  <img src="screenshots/td4-04-ca-trust.png" alt="La CA ajoutée aux autorités de confiance de Windows">
+</p>
+
+### Le certificat dans le cluster : un secret et des configs
+
+C'est la première utilisation des briques du cours. Traefik a besoin de 3 fichiers :
+
+| Fichier | Contenu | Rangé dans |
+|---|---|---|
+| `certs/swarm.localhost.key` | la clé privée du certificat | le **secret** `swarm_localhost_key`, car elle est sensible |
+| `certs/swarm.localhost.crt` | le certificat, qui est public | la **config** `swarm_localhost_crt` |
+| `traefik-tls.yml` | indique à Traefik le certificat à utiliser par défaut | la **config** `traefik_tls` |
+
+`swarm/traefik-tls.yml` :
+
+```yaml
+tls:
+  stores:
+    default:
+      defaultCertificate:
+        certFile: /certs/swarm.localhost.crt # config swarm_localhost_crt
+        keyFile: /run/secrets/swarm.localhost.key # secret swarm_localhost_key
+```
+
+On les crée avec les commandes Docker. Le `-` final indique que le contenu arrive par l'entrée standard, ici le fichier. On recrée aussi le réseau `web`, perdu avec l'ancien cluster :
+
+```bash
+docker compose exec manager docker network create --driver overlay web
+docker compose exec -T manager docker config create swarm_localhost_crt - < certs/swarm.localhost.crt
+docker compose exec -T manager docker config create traefik_tls - < traefik-tls.yml
+docker compose exec -T manager docker secret create swarm_localhost_key - < certs/swarm.localhost.key
+docker compose exec manager docker config ls
+docker compose exec manager docker secret ls
+```
+
+<p align="center">
+  <img src="screenshots/td4-05-tls-secret-config.png" alt="Création du réseau web, des 2 configs et du secret">
+</p>
+
+On voit tout de suite la différence entre les deux en les inspectant :
+
+```bash
+docker compose exec manager docker config inspect --pretty traefik_tls
+docker compose exec manager docker secret inspect --pretty swarm_localhost_key
+```
+
+<p align="center">
+  <img src="screenshots/td4-06-inspect-config-secret.png" alt="Une config affiche son contenu, un secret non">
+</p>
+
+- La config affiche son contenu (`Data`) : elle est **consultable**.
+- Le secret n'affiche que son nom et ses dates : il n'est **pas consultable**, même par l'administrateur du cluster.
+
+### Traefik en HTTPS
+
+La nouvelle stack, `swarm/traefik-https.stack.yml`, reprend celle du TD3 (`traefik.compose.yml`). Voici ce qui change :
+
+```yaml
+services:
+  traefik:
+    image: traefik:v3.6
+    networks:
+      web:
+        aliases:
+          # containers of the cluster (Dozzle, Outline) reach Authelia's https address through Traefik
+          - authelia.swarm.localhost
+    ports:
+      - 80:80 # HTTP
+      - 443:443 # HTTPS
+    configs:
+      - source: traefik_tls
+        target: /etc/traefik/tls.yml
+      - source: swarm_localhost_crt
+        target: /certs/swarm.localhost.crt
+    secrets:
+      - source: swarm_localhost_key
+        target: swarm.localhost.key # mounted in /run/secrets/
+    command:
+      # EntryPoints: HTTP on 80, HTTPS on 443
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.websecure.http.tls=true"
+      # ... (Swarm provider, dashboard and logs unchanged)
+      # File provider: the default certificate (traefik-tls.yml)
+      - "--providers.file.filename=/etc/traefik/tls.yml"
+    deploy:
+      labels:
+        # ... (dashboard router unchanged)
+        # Any other http request is redirected to https (lowest priority, so the
+        # http routers of the TD3 apps still win)
+        - "traefik.http.routers.to-https.rule=HostRegexp(`.+`)"
+        - "traefik.http.routers.to-https.entrypoints=web"
+        - "traefik.http.routers.to-https.priority=1"
+        - "traefik.http.routers.to-https.middlewares=to-https"
+        - "traefik.http.routers.to-https.service=noop@internal"
+        - "traefik.http.middlewares.to-https.redirectscheme.scheme=https"
+
+  whoami:
+    # ...
+        - "traefik.http.routers.whoami.entrypoints=web,websecure"
+
+# Created beforehand with `docker config create` and `docker secret create`
+configs:
+  traefik_tls:
+    external: true
+  swarm_localhost_crt:
+    external: true
+
+secrets:
+  swarm_localhost_key:
+    external: true
+```
+
+- Un nouveau point d'entrée, `websecure`, écoute sur le port **443** en TLS. Son certificat par défaut est indiqué dans `tls.yml`, lu par le provider `file`.
+- Les configs et le secret arrivent dans le conteneur sous forme de **fichiers** : les configs à l'endroit choisi (`target`), le secret dans `/run/secrets/`.
+- `external: true` : ils existent déjà, la stack ne les crée pas.
+- Le routeur `to-https` renvoie vers `https://` toute adresse http qui n'a pas son propre routeur. Avec sa priorité de 1 (la plus basse), les adresses http du TD3 (`whoami`, tableau de bord…) continuent de fonctionner.
+- L'alias `authelia.swarm.localhost` servira à la question 1.2.
+- `whoami` répond maintenant sur les 2 points d'entrée, pour tester le HTTPS.
+
+```bash
+docker compose cp traefik-https.stack.yml manager:/home/manager/
+docker compose exec manager docker stack deploy -c /home/manager/traefik-https.stack.yml traefik
+docker compose exec manager docker service ls
+```
+
+<p align="center">
+  <img src="screenshots/td4-07-traefik-https.png" alt="Déploiement de Traefik avec HTTPS">
+</p>
+
+Traefik publie maintenant les ports 80 **et** 443. On teste depuis WSL : `--cacert` indique à `curl` notre CA, puisque WSL ne lit pas les autorités de confiance de Windows.
+
+```bash
+curl -s --cacert certs/ca.crt https://whoami.swarm.localhost | head -4
+curl -sI http://dozzle.swarm.localhost | head -2
+```
+
+<p align="center">
+  <img src="screenshots/td4-08-https-test.png" alt="whoami en HTTPS et la redirection vers https">
+</p>
+
+- `whoami` répond en **HTTPS**, et `curl` accepte le certificat.
+- Une adresse sans routeur http, comme `dozzle.swarm.localhost`, est redirigée vers `https://` (`307 Temporary Redirect`).
+
+**Le tableau de bord de Traefik**, sur http://traefik.swarm.localhost :
+
+<p align="center">
+  <img src="screenshots/td4-09-traefik-dashboard.png" alt="Tableau de bord de Traefik avec les points d'entrée web et websecure">
+</p>
+
+On y voit les 2 points d'entrée, `web` sur `:80` et `websecure` sur `:443`, et les 2 providers, `Swarm` et `File`, sans aucune erreur.
+
+### Relancer Portainer
+
+On redéploie la stack du TD3, sans rien y changer :
+
+```bash
+docker compose exec manager docker volume ls
+docker compose cp portainer-agent-stack.traefik.yml manager:/home/manager/
+docker compose exec manager docker stack deploy -c /home/manager/portainer-agent-stack.traefik.yml portainer
+docker compose exec manager docker service ls
+```
+
+<p align="center">
+  <img src="screenshots/td4-10-portainer-redeploy.png" alt="Portainer redéployé">
+</p>
+
+Le volume `portainer_portainer_data` est resté sur le manager : Portainer retrouve son compte `admin`, pas besoin de le recréer.
+
+### Les nouvelles adresses dans le fichier hosts
+
+Comme au TD3, on ajoute les 3 adresses de l'exercice dans le fichier hosts de Windows (en administrateur) :
+
+```
+127.0.0.1 dozzle.swarm.localhost
+127.0.0.1 authelia.swarm.localhost
+127.0.0.1 outline.swarm.localhost
+```
+
+<p align="center">
+  <img src="screenshots/td4-11-hosts.png" alt="Les 3 adresses ajoutées au fichier hosts">
+</p>
