@@ -1,0 +1,70 @@
+# Authelia (TD4 ex. 1.2), stored in the swarm as a config (authelia_config).
+# No secret value in here: the secrets are swarm secrets, read from /run/secrets/
+# through the AUTHELIA_..._FILE variables and the template filter (see authelia.stack.yml).
+server:
+  address: 'tcp://:9091'
+
+log:
+  level: 'info'
+
+theme: 'auto'
+
+# The accounts: the users_database.yml file is the swarm secret authelia_users
+authentication_backend:
+  file:
+    path: '/config/users_database.yml'
+    watch: false
+
+access_control:
+  default_policy: 'one_factor'
+
+session:
+  cookies:
+    - domain: 'swarm.localhost'
+      authelia_url: 'https://authelia.swarm.localhost'
+
+storage:
+  local:
+    path: '/data/db.sqlite3'
+
+# No mail server: the messages Authelia would send are written to this file
+notifier:
+  filesystem:
+    filename: '/data/notification.txt'
+
+# Dozzle refuses a login without roles: members of the "admins" group get every role
+definitions:
+  user_attributes:
+    dozzle_roles:
+      expression: '"admins" in groups ? ["all"] : []'
+
+# OpenID Connect provider: the applications that may log in through Authelia
+identity_providers:
+  oidc:
+    jwks:
+      - key: {{ secret "/run/secrets/authelia_oidc_key" | mindent 10 "|" | msquote }}
+    # the dozzle_roles claim, sent in the ID token when the client asks for the dozzle_roles scope
+    claims_policies:
+      dozzle:
+        id_token: ['dozzle_roles']
+        custom_claims:
+          dozzle_roles: {}
+    scopes:
+      dozzle_roles:
+        claims: ['dozzle_roles']
+    clients:
+      - client_id: 'dozzle'
+        client_name: 'Dozzle'
+        # pbkdf2 digest of the secret stored in the swarm secret dozzle_oidc_secret
+        client_secret: '$pbkdf2-sha512$310000$zQ.7CBa0mgiu8k8Zm3dTBA$cliYtETUut.EYaAb1C1x5G0d8nJ7TBDq3ewmffU1bvgb/PbES0giHXdRx6Acqbgoa0V8yBz2Wk12VnIo7jdzLg'
+        public: false
+        authorization_policy: 'one_factor'
+        claims_policy: 'dozzle'
+        redirect_uris:
+          - 'https://dozzle.swarm.localhost/api/auth/callback'
+        scopes:
+          - 'openid'
+          - 'profile'
+          - 'email'
+          - 'dozzle_roles'
+        token_endpoint_auth_method: 'client_secret_basic'

@@ -1718,3 +1718,340 @@ Avec `admin` et son mot de passe, on arrive sur l'accueil :
 </p>
 
 On retrouve les **4 hôtes** du cluster (`manager`, `node1`, `node2`, `node3`), et les services de nos stacks : `dozzle`, `portainer` et `traefik`. Un clic sur un service affiche ses logs en direct.
+
+### 1.2 Authelia et connexion OpenID Connect
+
+**Authelia** est un portail de connexion : c'est lui qui garde les comptes.
+<br/>Avec **OpenID Connect** (OIDC), Dozzle n'a plus de comptes à lui. Il envoie le navigateur sur Authelia, qui vérifie le mot de passe, puis Authelia renvoie à Dozzle un **jeton signé** qui dit qui s'est connecté.
+
+**Les clés d'Authelia.** Authelia a besoin de 4 clés aléatoires (lien de réinitialisation du mot de passe, session, chiffrement de sa base, OIDC) et d'une clé privée RSA pour signer ses jetons. On les génère et on les envoie directement dans Swarm, sans jamais les écrire sur le disque. On ajoute aussi notre CA en config, `swarm_ca`, qui servira plus loin :
+
+```bash
+for s in authelia_jwt_secret authelia_session_secret authelia_storage_key authelia_oidc_hmac; do openssl rand -hex 32 | docker compose exec -T manager docker secret create $s -; done
+openssl genrsa 2048 | docker compose exec -T manager docker secret create authelia_oidc_key -
+docker compose exec -T manager docker config create swarm_ca - < certs/ca.crt
+docker compose exec manager docker secret ls
+```
+
+<p align="center">
+  <img src="screenshots/td4-18-authelia-secrets.png" alt="Les secrets d'Authelia">
+</p>
+
+**Le compte, dans un secret.** Authelia lit ses comptes dans un fichier `users_database.yml`. Comme pour Dozzle, le mot de passe y est stocké sous forme d'empreinte, générée par Authelia lui-même. On range le fichier dans `secrets/` (ignoré par Git), puis on en fait le secret `authelia_users` :
+
+```bash
+docker run --rm authelia/authelia:4.39 authelia crypto hash generate argon2 --password 'ahmed-authelia-2026'
+cat secrets/users_database.yml
+docker compose exec -T manager docker secret create authelia_users - < secrets/users_database.yml
+```
+
+<p align="center">
+  <img src="screenshots/td4-19-authelia-users.png" alt="Le compte ahmed et le secret authelia_users">
+</p>
+
+**Le client OIDC de Dozzle.** Pour qu'Authelia reconnaisse Dozzle, ils partagent un mot de passe, le *client secret* :
+- Dozzle en a besoin en clair : il va dans le secret `dozzle_oidc_secret` ;
+- Authelia n'en garde que l'**empreinte**, qui peut aller sans risque dans sa configuration.
+
+```bash
+openssl rand -hex 36 | tr -d "\n" > secrets/dozzle_oidc_secret
+docker run --rm authelia/authelia:4.39 authelia crypto hash generate pbkdf2 --variant sha512 --password "$(cat secrets/dozzle_oidc_secret)"
+docker compose exec -T manager docker secret create dozzle_oidc_secret - < secrets/dozzle_oidc_secret
+```
+
+<p align="center">
+  <img src="screenshots/td4-20-dozzle-client-secret.png" alt="Le client secret de Dozzle et son empreinte">
+</p>
+
+**La configuration d'Authelia, dans une config.** Elle ne contient aucune valeur secrète : on peut donc la ranger dans une config. Voici `swarm/authelia.configuration.yml` à ce stade :
+
+```yaml
+server:
+  address: 'tcp://:9091'
+
+log:
+  level: 'info'
+
+theme: 'auto'
+
+# The accounts: the users_database.yml file is the swarm secret authelia_users
+authentication_backend:
+  file:
+    path: '/config/users_database.yml'
+    watch: false
+
+access_control:
+  default_policy: 'one_factor'
+
+session:
+  cookies:
+    - domain: 'swarm.localhost'
+      authelia_url: 'https://authelia.swarm.localhost'
+
+storage:
+  local:
+    path: '/data/db.sqlite3'
+
+# No mail server: the messages Authelia would send are written to this file
+notifier:
+  filesystem:
+    filename: '/data/notification.txt'
+
+# OpenID Connect provider: the applications that may log in through Authelia
+identity_providers:
+  oidc:
+    jwks:
+      - key: {{ secret "/run/secrets/authelia_oidc_key" | mindent 10 "|" | msquote }}
+    clients:
+      - client_id: 'dozzle'
+        client_name: 'Dozzle'
+        # pbkdf2 digest of the secret stored in the swarm secret dozzle_oidc_secret
+        client_secret: '$pbkdf2-sha512$310000$zQ.7CBa0mgiu8k8Zm3dTBA$cliYtETUut.EYaAb1C1x5G0d8nJ7TBDq3ewmffU1bvgb/PbES0giHXdRx6Acqbgoa0V8yBz2Wk12VnIo7jdzLg'
+        public: false
+        authorization_policy: 'one_factor'
+        redirect_uris:
+          - 'https://dozzle.swarm.localhost/api/auth/callback'
+        scopes:
+          - 'openid'
+          - 'profile'
+          - 'email'
+        token_endpoint_auth_method: 'client_secret_basic'
+```
+
+- `session.cookies` : le cookie de session vaut pour tout `swarm.localhost`, et l'adresse d'Authelia est en `https://`.
+- Les comptes sont lus dans `/config/users_database.yml`, là où sera monté le secret `authelia_users`.
+- Pas de serveur mail : les messages qu'Authelia enverrait sont écrits dans un fichier.
+- `{{ secret "…" }}` : au démarrage, Authelia remplace cette ligne par le contenu du secret `authelia_oidc_key`. Les 4 autres clés passent par des variables `AUTHELIA_…_FILE`, dans la stack.
+- Le client `dozzle` : son empreinte de secret, l'adresse de retour vers Dozzle après la connexion (`redirect_uris`), et un seul facteur d'authentification (le mot de passe).
+
+**La stack**, `swarm/authelia.stack.yml` :
+
+```yaml
+services:
+  authelia:
+    image: authelia/authelia:4.39
+    environment:
+      X_AUTHELIA_CONFIG: /config/configuration.yml
+      X_AUTHELIA_CONFIG_FILTERS: template # enables {{ secret "..." }} in the configuration
+      AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE: /run/secrets/authelia_jwt_secret
+      AUTHELIA_SESSION_SECRET_FILE: /run/secrets/authelia_session_secret
+      AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE: /run/secrets/authelia_storage_key
+      AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET_FILE: /run/secrets/authelia_oidc_hmac
+      TZ: Europe/Paris
+    configs:
+      - source: authelia_config
+        target: /config/configuration.yml
+    secrets:
+      - source: authelia_users
+        target: /config/users_database.yml # the account(s)
+      - authelia_jwt_secret
+      - authelia_session_secret
+      - authelia_storage_key
+      - authelia_oidc_hmac
+      - authelia_oidc_key # private key that signs the OpenID Connect tokens
+    volumes:
+      - authelia_data:/data # SQLite database and notifications
+    networks:
+      - web
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager # the SQLite volume stays on the same node
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.authelia.rule=Host(`authelia.swarm.localhost`)"
+        - "traefik.http.routers.authelia.entrypoints=websecure"
+        - "traefik.http.services.authelia.loadbalancer.server.port=9091"
+
+networks:
+  web:
+    external: true
+
+volumes:
+  authelia_data:
+
+configs:
+  authelia_config:
+    external: true
+
+secrets:
+  authelia_users:
+    external: true
+  # ... (same for the 5 other secrets)
+```
+
+- La config est montée en `/config/configuration.yml`, le secret du compte en `/config/users_database.yml`.
+- Les secrets sans `target` arrivent dans `/run/secrets/<nom>`, d'où les chemins des variables `_FILE`.
+- Authelia est placé sur le manager : sa base SQLite est dans un volume local, qui doit rester sur le même nœud.
+
+On crée la config, puis on déploie :
+
+```bash
+docker compose exec -T manager docker config create authelia_config - < authelia.configuration.yml
+docker compose cp authelia.stack.yml manager:/home/manager/
+docker compose exec manager docker stack deploy -c /home/manager/authelia.stack.yml authelia
+docker compose exec manager docker service ls --filter name=authelia
+docker compose exec manager docker service logs --raw authelia_authelia 2>&1 | tail -4
+```
+
+<p align="center">
+  <img src="screenshots/td4-21-authelia-deploy.png" alt="Déploiement d'Authelia">
+</p>
+
+Authelia prépare sa base, écoute sur le port 9091 et termine par `Startup complete`.
+
+**Dans le navigateur**, sur https://authelia.swarm.localhost :
+
+<p align="center">
+  <img src="screenshots/td4-22-authelia-login.png" alt="Page de connexion d'Authelia">
+</p>
+
+<p align="center">
+  <img src="screenshots/td4-23-authelia-logged.png" alt="Connecté à Authelia avec le compte ahmed">
+</p>
+
+Le compte `ahmed`, créé dans le secret, fonctionne : « Bonjour Ahmed », « Authentifié ».
+
+**Brancher Dozzle sur Authelia.** La nouvelle stack, `swarm/dozzle.oidc.stack.yml`, reprend celle de la question 1.1 avec un autre mode de connexion :
+
+```yaml
+services:
+  dozzle:
+    image: amir20/dozzle:latest
+    environment:
+      DOZZLE_MODE: swarm
+      DOZZLE_AUTH_PROVIDER: oidc # Authelia owns the accounts, users.yml is no longer read
+      DOZZLE_AUTH_OIDC_ISSUER: https://authelia.swarm.localhost
+      DOZZLE_AUTH_OIDC_CLIENT_ID: dozzle
+      DOZZLE_AUTH_OIDC_CLIENT_SECRET_FILE: /run/secrets/dozzle_oidc_secret
+      DOZZLE_AUTH_OIDC_NAME: Authelia # label of the login button
+      # trust our local CA, to call https://authelia.swarm.localhost from the container
+      SSL_CERT_FILE: /certs/ca.crt
+    # ... (volumes, networks and deploy unchanged)
+    configs:
+      - source: swarm_ca
+        target: /certs/ca.crt
+    secrets:
+      - dozzle_oidc_secret # plain client secret (Authelia only keeps its digest)
+
+configs:
+  swarm_ca:
+    external: true # our CA certificate (certs/ca.crt)
+
+secrets:
+  dozzle_oidc_secret:
+    external: true
+```
+
+Dozzle doit lui-même appeler Authelia, pour échanger le code reçu contre le jeton, et à la même adresse que le navigateur : `https://authelia.swarm.localhost`. Depuis un conteneur, il y a 2 obstacles :
+- **le nom** : le fichier hosts de Windows n'existe pas dans le conteneur. C'est le rôle de l'alias `authelia.swarm.localhost` donné à Traefik sur le réseau `web` : le DNS de Docker répond avec l'adresse de Traefik, qui transmet à Authelia ;
+- **le certificat** : le conteneur ne connaît pas notre CA. On la lui donne avec la config `swarm_ca`, et `SSL_CERT_FILE` lui dit de s'y fier.
+
+```bash
+docker compose cp dozzle.oidc.stack.yml manager:/home/manager/
+docker compose exec manager docker stack deploy -c /home/manager/dozzle.oidc.stack.yml dozzle
+docker compose exec manager docker service ps dozzle_dozzle --filter desired-state=running
+docker compose exec manager docker service logs --raw --since 2m dozzle_dozzle 2>&1 | grep -iE 'oidc|auth|error|fatal' | head -8
+```
+
+<p align="center">
+  <img src="screenshots/td4-24-dozzle-oidc-deploy.png" alt="Dozzle redéployé en mode OpenID Connect">
+</p>
+
+`stack deploy` met à jour le service existant (`Updating service`). Les logs confirment le nouveau mode : `Using OpenID Connect authentication`, avec Authelia comme émetteur. Le fichier `users.yml` est ignoré : les comptes viennent maintenant du jeton.
+
+La page de connexion de Dozzle ne propose plus de formulaire, seulement un bouton :
+
+<p align="center">
+  <img src="screenshots/td4-25-dozzle-oidc-login.png" alt="Dozzle propose de continuer avec Authelia">
+</p>
+
+Le bouton mène à la page de connexion d'Authelia, puis à une demande de consentement. Mais au retour sur Dozzle :
+
+<p align="center">
+  <img src="screenshots/td4-26-dozzle-oidc-error.png" alt="Échec de la connexion sur Dozzle">
+</p>
+
+> **Problème rencontré :** « Échec de la connexion ». Les logs de Dozzle donnent la raison : `OIDC login rejected: no roles claim found in the ID token`.
+> <br/>Tout le reste a fonctionné (HTTPS, alias, échange du jeton), mais en mode OIDC, Dozzle exige que le jeton contienne les **rôles** de l'utilisateur, et Authelia ne les envoie pas par défaut.
+> <br/>**Solution :** comme le montre la documentation de Dozzle, Authelia calcule un attribut `dozzle_roles` à partir des groupes (le groupe `admins` reçoit tous les rôles), et l'envoie dans le jeton quand Dozzle demande le scope `dozzle_roles`.
+
+On ajoute à `authelia.configuration.yml` :
+
+```yaml
+# Dozzle refuses a login without roles: members of the "admins" group get every role
+definitions:
+  user_attributes:
+    dozzle_roles:
+      expression: '"admins" in groups ? ["all"] : []'
+
+identity_providers:
+  oidc:
+    # the dozzle_roles claim, sent in the ID token when the client asks for the dozzle_roles scope
+    claims_policies:
+      dozzle:
+        id_token: ['dozzle_roles']
+        custom_claims:
+          dozzle_roles: {}
+    scopes:
+      dozzle_roles:
+        claims: ['dozzle_roles']
+    clients:
+      - client_id: 'dozzle'
+        # ...
+        claims_policy: 'dozzle'
+        scopes:
+          # ...
+          - 'dozzle_roles'
+```
+
+Et dans `dozzle.oidc.stack.yml`, Dozzle demande ce scope :
+
+```yaml
+      DOZZLE_AUTH_OIDC_SCOPES: dozzle_roles # ask Authelia for the dozzle_roles claim
+```
+
+**Mettre à jour une config.** Une config n'est **pas modifiable** : il faut la supprimer, puis la recréer avec le nouveau fichier.
+
+```bash
+docker compose exec manager docker config rm authelia_config
+docker compose exec manager docker stack rm authelia
+docker compose exec manager docker config rm authelia_config
+docker compose exec -T manager docker config create authelia_config - < authelia.configuration.yml
+docker compose exec manager docker stack deploy -c /home/manager/authelia.stack.yml authelia
+docker compose exec manager docker service ls --filter name=authelia
+```
+
+<p align="center">
+  <img src="screenshots/td4-27-authelia-config-update.png" alt="Suppression puis recréation de la config d'Authelia">
+</p>
+
+- Le premier `config rm` est refusé : `config 'authelia_config' is in use by the following service: authelia_authelia`. Swarm ne supprime pas une config utilisée par un service.
+- On retire donc d'abord la stack, puis la suppression passe. On recrée la config et on redéploie Authelia.
+- Le volume `authelia_data` n'est pas touché par `stack rm` : la base d'Authelia est conservée.
+
+On redéploie aussi Dozzle, pour sa nouvelle variable :
+
+```bash
+docker compose cp dozzle.oidc.stack.yml manager:/home/manager/
+docker compose exec manager docker stack deploy -c /home/manager/dozzle.oidc.stack.yml dozzle
+docker compose exec manager docker service ls --filter name=dozzle
+```
+
+<p align="center">
+  <img src="screenshots/td4-28-dozzle-oidc-redeploy.png" alt="Dozzle redéployé avec le scope dozzle_roles">
+</p>
+
+**Nouvel essai.** Après la connexion sur Authelia, la demande de consentement liste maintenant le scope `dozzle_roles` :
+
+<p align="center">
+  <img src="screenshots/td4-29-authelia-consent.png" alt="Demande de consentement d'Authelia pour Dozzle">
+</p>
+
+On accepte, et on arrive sur Dozzle. Le menu de l'utilisateur, en haut à droite :
+
+<p align="center">
+  <img src="screenshots/td4-30-dozzle-oidc-user.png" alt="Dozzle connecté avec le compte Authelia">
+</p>
+
+On est connecté à Dozzle en tant qu'**Ahmed** (`ahmed@swarm.localhost`) : le compte du secret `authelia_users`, vérifié par Authelia.
