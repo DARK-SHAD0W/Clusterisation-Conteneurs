@@ -21,7 +21,7 @@ J'ai publié le port 80 du manager dans \code{mfp/swarm/compose.yml}, pour la qu
   \cmd{docker compose exec manager docker node ls}
 \end{commandes}
 
-Seul le manager a été recréé, \code{docker node ls} affiche toujours les 4 nœuds \code{Ready}.
+Seul le manager a été recréé, \code{docker node ls} affiche toujours le manager et les 3 workers en \code{Ready}.
 
 \subsection{Déployer la stack Traefik sur le manager}
 
@@ -144,7 +144,7 @@ J'ai utilisé la stack de la documentation de Portainer pour Swarm.
   \cmd{docker compose exec manager docker ps --filter name=portainer --format 'table \{\{.Names\}\}\textbackslash{}t\{\{.Image\}\}\textbackslash{}t\{\{.Status\}\}'}
 \end{commandes}
 
-\capture{td3-16-portainer-deploy.png}{Un agent sur chacun des 4 nœuds, et l'interface sur le manager.}
+\capture{td3-16-portainer-deploy.png}{Un agent sur chaque machine (le manager et les 3 nœuds), et l'interface sur le manager.}
 
 \subsection{Publier Portainer avec Traefik}
 

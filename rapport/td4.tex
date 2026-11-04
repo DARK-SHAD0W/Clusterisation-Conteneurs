@@ -37,7 +37,7 @@ Authelia n'accepte qu'une adresse en \code{https://}, j'ai donc ajouté le port 
   \cmd{docker compose exec manager docker node ls}
 \end{commandes}
 
-Les 4 nœuds sont \code{Ready}. Le réseau \code{web} et les stacks ont disparu avec l'ancien cluster, mais les volumes sont restés sur les nœuds.
+Le manager et les 3 workers sont \code{Ready}. Le réseau \code{web} et les stacks ont disparu avec l'ancien cluster, mais les volumes sont restés sur les nœuds.
 
 \subsection{Créer le certificat}
 
@@ -156,7 +156,7 @@ J'ai utilisé la commande de la documentation de Dozzle.
   \cmd{docker compose exec manager docker service ps dozzle\_dozzle}
 \end{commandes}
 
-\capture{td4-17-dozzle-home.png}{Connecté à \code{dozzle.swarm.localhost} avec le compte \code{admin}, Dozzle voit les 4 nœuds.}
+\capture{td4-17-dozzle-home.png}{Connecté à \code{dozzle.swarm.localhost} avec le compte \code{admin}, Dozzle voit le manager et les 3 nœuds.}
 
 \subsection{Authelia et connexion OIDC à Dozzle}
 
