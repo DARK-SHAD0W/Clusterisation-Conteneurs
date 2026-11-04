@@ -119,13 +119,14 @@
 
 % ---------------------------------------------------------------- captures
 % \capture{fichier.png}{Une ou deux phrases.}
-% \capture[0.30\textheight]{fichier.png}{...}   hauteur maximale différente
+% Toutes les captures ont la même règle : pleine largeur, centrées, sans dépasser
+% 58 % de la hauteur de page. L'argument optionnel des anciennes versions est ignoré.
 \captionsetup{font=small,labelfont=bf,labelsep=period,justification=centering,skip=5pt,hypcap=false}
-\newcommand{\capture}[3][0.40\textheight]{%
+\newcommand{\capture}[3][]{%
   \par\medskip
   \begin{minipage}{\linewidth}\centering
     {\setlength{\fboxsep}{0pt}\setlength{\fboxrule}{0.4pt}%
-     \fcolorbox{black!25}{white}{\includegraphics[width=\dimexpr\linewidth-0.8pt\relax,height=#1,keepaspectratio]{#2}}}%
+     \fcolorbox{black!25}{white}{\includegraphics[width=\dimexpr\linewidth-0.8pt\relax,height=0.58\textheight,keepaspectratio]{#2}}}%
     \captionof{figure}{#3}
   \end{minipage}\par\medskip}
 
@@ -133,19 +134,30 @@
 % \begin{commandes} ... \end{commandes}                      commandes bash
 % \begin{fichier}{swarm/dozzle.stack.yml} ... \end{fichier}  extrait YAML
 % \begin{fichier}[docker]{server/Dockerfile} ... \end{fichier}
+% Couleurs du thème « Dark+ » de VS Code : style Pygments « vscode » fourni dans
+% pygments-vscode/ (latexmkrc l'ajoute au PYTHONPATH).
+\definecolor{vsfond}{HTML}{1E1E1E}
+\definecolor{vstexte}{HTML}{D4D4D4}
+\definecolor{vsonglet}{HTML}{2D2D2D}
+\definecolor{vstitre}{HTML}{CCCCCC}
+\definecolor{vsbord}{HTML}{3C3C3C}
+\definecolor{vsnumero}{HTML}{858585}
+\renewcommand{\theFancyVerbLine}{\textcolor{vsnumero}{\scriptsize\arabic{FancyVerbLine}}}
 \tcbset{
-  codebox/.style={enhanced, breakable, listing only, colback=black!3, colframe=black!45,
-    boxrule=0pt, leftrule=1.5pt, arc=0pt, outer arc=0pt, left=6pt, right=4pt, top=3pt, bottom=3pt,
-    fonttitle=\footnotesize\bfseries, coltitle=black, colbacktitle=black!8,
-    toptitle=1pt, bottomtitle=1pt, before skip=6pt, after skip=8pt},
+  codebox/.style={enhanced, breakable, listing only, colback=vsfond, colupper=vstexte,
+    colframe=vsbord, boxrule=0.5pt, arc=2pt, outer arc=2pt, left=8pt, right=6pt, top=4pt, bottom=4pt,
+    fonttitle=\footnotesize\ttfamily, coltitle=vstitre, colbacktitle=vsonglet,
+    toptitle=2pt, bottomtitle=2pt, before skip=6pt, after skip=8pt},
 }
 % « !O » : le titre optionnel doit suivre \begin{commandes} sur la même ligne
 % (sinon une première ligne commençant par # serait lue comme argument)
 \NewTCBListing{commandes}{ !O{Commandes} }{codebox, title={#1},
-  listing engine=minted, minted language=bash, minted style=bw,
+  listing engine=minted, minted language=bash, minted style=vscode,
   minted options={fontsize=\small, breaklines, breakanywhere, autogobble}}
-\NewTCBListing{fichier}{ O{yaml} m }{codebox, title={\ttfamily #2},
-  listing engine=minted, minted language=#1, minted style=bw,
+% Pas de numéros de ligne : les extraits sont coupés (# ...), les numéros ne
+% correspondraient pas à ceux du vrai fichier.
+\NewTCBListing{fichier}{ O{yaml} m }{codebox, title={#2},
+  listing engine=minted, minted language=#1, minted style=vscode,
   minted options={fontsize=\small, breaklines, breakanywhere, autogobble}}
 
 % ---------------------------------------------------------------- encadré problème / solution

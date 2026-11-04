@@ -1,6 +1,6 @@
 # My Favorite Places : Clusterisation de conteneurs
 
-Projet du module **Clusterisation de conteneurs** (ESGI Lyon, 5ESGI AL + IABD).
+Projet du module **Clusterisation de conteneurs** (ESGI Lyon, 5ESGI AL).
 <br/>Le but : prendre l'application **My Favorite Places** (un client React et une API Node.js/Express qui enregistre ses données dans PostgreSQL), la mettre dans des conteneurs, l'orchestrer, puis la faire tenir la charge.
 
 Ce document raconte la démarche, étape par étape (retour au [sommaire général](../README.md)).

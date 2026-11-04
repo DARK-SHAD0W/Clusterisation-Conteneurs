@@ -1,6 +1,6 @@
 # Clusterisation de conteneurs
 
-Projet du module **Clusterisation de conteneurs** (ESGI Lyon, 5ESGI AL + IABD).
+Projet du module **Clusterisation de conteneurs** (ESGI Lyon, 5ESGI AL).
 <br/>Le dépôt contient deux applications, chacune dans son dossier et avec sa propre documentation.
 
 | Dossier | Application | Documentation |

@@ -1,15 +1,14 @@
 % TD 3 : Traefik et Portainer
 \td{3}{Traefik et Portainer}
 
-Dans ce TD, j'ai placé Traefik, un reverse proxy, devant mon cluster Swarm : chaque application répond à son propre nom de domaine au lieu d'un port.
-J'ai ensuite installé Portainer pour gérer le cluster depuis le navigateur.
+J'ai placé le reverse proxy Traefik devant mon cluster Swarm pour joindre chaque application par un nom de domaine, puis j'ai installé Portainer pour gérer le cluster depuis le navigateur.
 
 % =====================================================================
 \exercice{1}{Déployer Traefik}
 
 \subsection{Relancer le cluster}
 
-Traefik tourne dans le manager : j'ai publié le port 80 du manager pour que le navigateur du PC puisse le joindre.
+J'ai relancé le cluster du TD~2 (un manager et 3 nœuds) en publiant le port 80 du manager pour Traefik.
 
 \begin{fichier}{mfp/swarm/compose.yml}
   manager:
@@ -23,7 +22,7 @@ docker compose up -d
 docker compose exec manager docker node ls
 \end{commandes}
 
-\code{up -d} n'a recréé que le manager, et les 4 nœuds sont restés \code{Ready}.
+Seul le manager a été recréé, et \code{node ls} montrait bien les 4 nœuds \code{Ready}.
 
 \subsection{Déployer Traefik sur le manager}
 
@@ -38,7 +37,8 @@ docker compose exec manager docker node ls
         - "traefik.http.services.whoami.loadbalancer.server.port=80"
 \end{fichier}
 
-La stack déclare le réseau \code{web} comme \code{external} : il doit exister avant le déploiement, en overlay pour couvrir tous les nœuds.
+Comme la stack déclare le réseau \code{web} en \code{external}, j'ai dû le créer avant de la déployer, en overlay pour qu'il couvre tous les nœuds.
+J'ai aussi supprimé ce qui restait du TD~2.
 
 \begin{commandes}
 docker compose exec manager docker network create --driver overlay web
@@ -50,20 +50,21 @@ docker compose exec manager docker stack deploy -c /home/manager/traefik.compose
 docker compose exec manager docker service ls
 \end{commandes}
 
-\capture[0.22\textheight]{td3-03-traefik-deploy.png}{Seul Traefik publie un port (80) : whoami n'est joignable qu'à travers lui.}
+\capture{td3-03-traefik-deploy.png}{Seul Traefik publie un port ; whoami reste caché derrière lui.}
 
 \subsection{Accéder à Traefik depuis le navigateur}
 
-Aucun DNS ne connaît ces noms : je les ai déclarés dans le fichier hosts de Windows, ouvert en administrateur.
+Le port 80 était déjà publié depuis la question 1.1.
+Il restait à déclarer les deux noms dans le fichier hosts de Windows, ouvert en administrateur, parce qu'aucun DNS ne les connaît.
 
 \begin{fichier}[text]{C:\textbackslash Windows\textbackslash System32\textbackslash drivers\textbackslash etc\textbackslash hosts}
 127.0.0.1   traefik.swarm.localhost
 127.0.0.1   whoami.swarm.localhost
 \end{fichier}
 
-\capture[0.27\textheight]{td3-05-traefik-dashboard.png}{Traefik a découvert les routeurs tout seul grâce aux labels, sans aucune erreur.}
+\capture{td3-05-traefik-dashboard.png}{Le tableau de bord de Traefik, qui a trouvé les routeurs tout seul grâce aux labels.}
 
-\capture[0.34\textheight]{td3-06-whoami.png}{Traefik a routé la requête grâce à l'en-tête \code{Host}, et ses en-têtes \code{X-Forwarded-*} prouvent qu'elle est passée par lui.}
+\capture{td3-06-whoami.png}{La réponse de whoami. Les en-têtes \code{X-Forwarded-*} montrent que la requête est bien passée par Traefik.}
 
 % =====================================================================
 \exercice{2}{Déployer une autre application}
@@ -72,14 +73,16 @@ Aucun DNS ne connaît ces noms : je les ai déclarés dans le fichier hosts de W
 
 \begin{commandes}[Depuis voting-app]
 docker compose up -d
+docker login
+docker compose up -d
 docker compose ps --format 'table {{.Name}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
 curl -X POST -d vote=a http://localhost:8080/   # Cats, 3 fois
 curl -X POST -d vote=b http://localhost:8080/   # Dogs, 2 fois
 \end{commandes}
 
-\probleme{Docker Hub a répondu \code{429 Too Many Requests} : il limite les téléchargements sans compte.}{Je me suis connecté avec \code{docker login}, puis j'ai relancé \code{docker compose up -d}.}
+\probleme{Le premier \code{up -d} a échoué avec \code{429 Too Many Requests}, car Docker Hub limite les téléchargements anonymes.}{Je me suis connecté avec \code{docker login}, puis j'ai relancé.}
 
-\capture[0.21\textheight]{td3-09-result-local.png}{Les 5 votes ont traversé redis, le worker et la base jusqu'au site des résultats.}
+\capture{td3-09-result-local.png}{Les 5 votes envoyés en local arrivent bien sur la page des résultats.}
 
 \begin{commandes}
 docker compose down
@@ -87,7 +90,11 @@ docker compose down
 
 \subsection{Déployer l'application sur le cluster Swarm}
 
-Swarm ne construit pas d'images : la stack utilise des images publiées, et \code{--with-registry-auth} transmet ma connexion Docker Hub aux nœuds qui les téléchargent.
+L'application a 5 parties.
+Le site \code{vote} dépose chaque vote dans \code{redis}, le \code{worker} les récupère pour les enregistrer dans la base \code{db}, et le site \code{result} lit cette base pour afficher les scores.
+
+Swarm ne sait pas construire d'images, donc la stack fournie utilise des images déjà publiées.
+Je me suis connecté à Docker Hub dans le manager et j'ai ajouté \code{--with-registry-auth} pour que les autres nœuds puissent aussi les télécharger.
 
 \begin{commandes}[Depuis mfp/swarm]
 docker compose exec manager docker login
@@ -96,11 +103,13 @@ docker compose exec manager docker stack deploy --with-registry-auth -c /home/ma
 docker compose exec manager docker stack services voting
 \end{commandes}
 
-Les 5 services étaient au complet après une minute, mais les ports 8080 et 8081 n'étaient publiés que dans le cluster, pas sur le PC.
+Au bout d'une minute environ, les 5 services tournaient, mais rien ne reliait encore les ports 8080 et 8081 à mon PC.
 
+\needspace{7cm}
 \subsection{Publier le vote et les résultats avec Traefik}
 
-Le service \code{result} reçoit les mêmes labels avec \code{result.swarm.localhost}, et les 2 services perdent leurs ports 8080 et 8081.
+Comme pour \code{whoami}, j'ai remplacé les ports de \code{vote} et \code{result} par des labels Traefik et je les ai branchés sur le réseau \code{web}.
+Ci-dessous la partie de \code{vote} ; celle de \code{result} ne change que par le nom.
 
 \begin{fichier}{voting-app/docker-stack.traefik.yml}
     networks:
@@ -115,7 +124,7 @@ Le service \code{result} reçoit les mêmes labels avec \code{result.swarm.local
         - "traefik.http.services.vote.loadbalancer.server.port=80"
 \end{fichier}
 
-En gardant le nom \code{voting}, Swarm met à jour les services existants au lieu d'en créer d'autres.
+J'ai gardé le nom de stack \code{voting}, donc Swarm a mis à jour les services au lieu d'en créer d'autres.
 
 \begin{commandes}
 docker compose cp ../../voting-app/docker-stack.traefik.yml manager:/home/manager/
@@ -128,19 +137,21 @@ docker compose exec manager docker stack services voting
 127.0.0.1   result.swarm.localhost
 \end{fichier}
 
-\capture[0.30\textheight]{td3-15-traefik-routers.png}{Les routeurs \code{vote@swarm} et \code{result@swarm} sont apparus tout seuls à partir des labels.}
+\capture{td3-15-traefik-routers.png}{Les routeurs \code{vote@swarm} et \code{result@swarm} apparaissent dans Traefik.}
 
 \begin{commandes}
 curl -X POST -d vote=a http://vote.swarm.localhost/   # Cats, 2 fois
 curl -X POST -d vote=b http://vote.swarm.localhost/   # Dogs, 3 fois
 \end{commandes}
 
-\capture[0.21\textheight]{td3-14-result-traefik.png}{Le résultat est l'inverse du test local : la base du cluster ne contient que les votes envoyés au cluster.}
+\capture{td3-14-result-traefik.png}{Cette fois les résultats sont inversés, parce que la base du cluster ne contient que les votes envoyés au cluster.}
 
 % =====================================================================
 \exercice{3}{Déployer Portainer}
 
 \subsection{Déployer Portainer sur le cluster}
+
+J'ai suivi la documentation de Portainer pour Swarm, qui fournit une stack toute prête.
 
 \begin{commandes}[Depuis mfp/swarm]
 curl -sL https://downloads.portainer.io/ce-lts/portainer-agent-stack.yml -o portainer-agent-stack.yml
@@ -150,9 +161,12 @@ docker compose exec manager docker stack services portainer
 docker compose exec manager docker ps --filter name=portainer --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
 \end{commandes}
 
-\capture[0.30\textheight]{td3-16-portainer-deploy.png}{Un agent tourne sur chacun des 4 nœuds (mode \code{global}), et l'interface sur le manager.}
+\capture{td3-16-portainer-deploy.png}{Un agent tourne sur chacun des 4 nœuds (mode \code{global}) et l'interface sur le manager.}
 
 \subsection{Publier Portainer avec Traefik}
+
+Portainer répond sur le port 9000, c'est donc ce port que j'ai mis dans ses labels.
+Je l'ai aussi ajouté au réseau \code{web}, sinon Traefik ne pourrait pas le joindre.
 
 \begin{fichier}{mfp/swarm/portainer-agent-stack.traefik.yml}
     networks:
@@ -179,15 +193,15 @@ docker compose exec manager docker stack services portainer
 127.0.0.1   portainer.swarm.localhost
 \end{fichier}
 
-Portainer exige un setup token pour créer le compte administrateur : il l'écrit dans ses logs.
+Au premier lancement, Portainer demande un setup token, que j'ai récupéré dans ses logs.
 
 \begin{commandes}
 docker compose exec manager docker service logs --raw portainer_portainer 2>&1 | grep -A2 setup_token=
 \end{commandes}
 
-Le compte doit être créé dans les 5 minutes qui suivent le démarrage, sinon Portainer s'arrête par sécurité.
+J'ai dû créer le compte \code{admin} dans les 5 minutes qui suivent le démarrage, sinon Portainer s'arrête par sécurité.
 
-\capture[0.30\textheight]{td3-21-portainer-home.png}{Portainer a trouvé le cluster grâce aux agents : un environnement Swarm avec ses 4 nœuds.}
+\capture{td3-22-portainer-stacks.png}{Je retrouve mes 3 stacks, marquées \og Limited\fg{} parce qu'elles ont été créées en ligne de commande.}
 
 % =====================================================================
 \exercice{4}{Redéployer depuis Portainer}
@@ -200,25 +214,28 @@ docker compose exec manager docker stack rm voting
 docker compose exec manager docker stack ls
 \end{commandes}
 
+\needspace{12cm}
 \subsection{Republier la stack depuis Portainer}
 
-J'ai envoyé la version Traefik de la stack (question 2.3), pour que le vote et les résultats gardent leurs adresses.
+J'ai envoyé le fichier \code{docker-stack.traefik.yml} de la question 2.3, pour garder les adresses du vote et des résultats.
 
-\capture[0.30\textheight]{td3-24-portainer-add-stack.png}{L'envoi du fichier dans Portainer fait l'équivalent d'un \code{docker stack deploy}.}
+\capture{td3-24-portainer-add-stack.png}{La création de la stack \code{voting} dans Portainer, par envoi du fichier.}
 
-\capture[0.30\textheight]{td3-25-portainer-stacks.png}{\code{voting} est en contrôle \og Total\fg{}, alors que les stacks créées en ligne de commande restent \og Limited\fg{} : Portainer n'a pas leur fichier.}
+\capture{td3-25-portainer-stacks.png}{Cette fois \code{voting} est en contrôle \og Total\fg{}, car c'est Portainer qui l'a créée.}
 
+\needspace{5cm}
 \subsection{Vérifier l'accès depuis le navigateur}
 
-Le vote et les résultats répondaient de nouveau à leurs adresses.
+Le vote et les résultats répondaient de nouveau sur leurs adresses.
 
-\probleme{Les résultats affichaient \og No votes yet\fg{} : la base a été recréée sur \code{node2}, avec un volume neuf.}{Rien à corriger : les anciens votes sont restés dans le volume de \code{node3}.}
+\probleme{La page des résultats affichait \og No votes yet\fg{}, car la base avait été recréée sur \code{node2} avec un volume neuf.}{Rien à corriger, les anciens votes sont restés dans le volume de \code{node3}.}
 
 \subsection{Déployer l'API de MFP depuis Portainer}
 
 \subsubsection{Création de la stack}
 
-Le serveur utilise l'image publiée sur GHCR, puisque Swarm ne construit pas d'images, et passe par Traefik au lieu de publier le port 3000.
+Comme pour l'application de vote, le serveur utilise une image déjà publiée, celle que j'avais mise sur GHCR.
+Il passe par Traefik au lieu de publier le port 3000.
 
 \begin{fichier}{mfp/swarm/mfp-api.stack.yml}
   server:
@@ -231,11 +248,11 @@ Le serveur utilise l'image publiée sur GHCR, puisque Swarm ne construit pas d'i
         - "traefik.http.services.mfp-api.loadbalancer.server.port=3000"
 \end{fichier}
 
-Je l'ai déployée depuis Portainer sous le nom \code{mfp}, comme à la question 4.2.
+J'ai déployé la stack \code{mfp} depuis Portainer, de la même façon qu'à la question 4.2.
 
-\capture[0.22\textheight]{td3-31-portainer-mfp-services.png}{La base et le serveur de MFP tournent sur le cluster sans publier aucun port.}
+\capture{td3-31-portainer-mfp-services.png}{La base et le serveur de MFP tournent, sans aucun port publié.}
 
-\probleme{Au premier démarrage, le serveur s'arrêtait sur \code{getaddrinfo ENOTFOUND db} : la base n'existait pas encore.}{Rien à faire : Swarm a relancé le serveur, qui s'est connecté au deuxième essai.}
+\probleme{Au premier démarrage, le serveur s'arrêtait sur \code{getaddrinfo ENOTFOUND db}, parce que la base n'était pas encore prête.}{Je n'ai rien eu à faire, car Swarm a relancé le serveur, qui s'est connecté au deuxième essai.}
 
 \subsubsection{Test avec Bruno}
 
@@ -243,7 +260,8 @@ Je l'ai déployée depuis Portainer sous le nom \code{mfp}, comme à la question
 127.0.0.1   api.swarm.localhost
 \end{fichier}
 
-J'ai travaillé sur une copie de la collection Bruno, pour changer son adresse sans toucher à l'originale.
+\needspace{4cm}
+Pour ne pas abîmer ma collection Bruno, j'en ai fait une copie et j'ai changé son adresse avec \code{sed}.
 
 \begin{commandes}[Depuis mfp]
 cp -r mfp-bruno-api-test-collection ~/mfp-bruno-swarm
@@ -251,4 +269,4 @@ sed -i 's#http://localhost:3000#http://api.swarm.localhost#' ~/mfp-bruno-swarm/*
 cd ~/mfp-bruno-swarm && bru run
 \end{commandes}
 
-\capture[0.34\textheight]{td3-33-bruno-swarm.png}{Les 3 requêtes passent : l'API du cluster répond depuis le PC sur \code{api.swarm.localhost}.}
+\capture{td3-33-bruno-swarm.png}{Les 3 requêtes passent, donc l'API du cluster répond bien depuis mon PC.}

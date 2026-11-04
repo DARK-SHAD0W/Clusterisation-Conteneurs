@@ -1,14 +1,15 @@
 % ================================================================ TD 1
 \td{1}{Dockerisation de My Favorite Places}
 
-My Favorite Places se compose d'un client React, d'une API Node.js/Express et d'une base PostgreSQL. Dans ce TD, je les ai mis dans des conteneurs, puis orchestrés avec Docker Compose.
+My Favorite Places est une petite application avec un client React, une API Node.js/Express et une base PostgreSQL. Dans ce TD, je l'ai mise dans des conteneurs, puis je l'ai lancée avec Docker Compose.
 
-% ---------------------------------------------------------------- 1
-\partie{1}{Test initial avec Bruno}
+% ================================================================ Exercice 1
+\exercice{1}{Dockerisation du projet}
 
-\subsection{Lancer une base PostgreSQL}
+% ---------------------------------------------------------------- 1.1
+\subsection{Tester le serveur avec yarn dev et Bruno}
 
-Le serveur ne démarre pas sans base : j'ai lancé PostgreSQL avec le mot de passe attendu par \code{server/src/datasource.ts}.
+Le serveur refuse de démarrer tant qu'il ne trouve pas PostgreSQL. J'ai donc d'abord lancé une base dans un conteneur, avec le mot de passe écrit dans \code{server/src/datasource.ts}.
 
 \begin{commandes}
 docker run -d --name mfp-db \
@@ -16,26 +17,20 @@ docker run -d --name mfp-db \
   -p 5432:5432 \
   postgres:17
 docker ps
-\end{commandes}
 
-\subsection{Lancer l'API en mode développement}
-
-\begin{commandes}
 cd server
 yarn install
 yarn dev
 \end{commandes}
 
-\subsection{Tests avec la collection Bruno}
+\capture{td1-01-create-user.png}{L'utilisateur de test est créé, avec un mot de passe haché en Argon2.}
 
-\capture[0.20\textheight]{td1-01-create-user.png}{L'utilisateur est créé et son mot de passe est stocké haché avec Argon2.}
+\capture{td1-03-my-profile.png}{Avec le token reçu à la connexion, \code{/api/users/me} renvoie bien mon profil.}
 
-\capture[0.24\textheight]{td1-03-my-profile.png}{Avec le token obtenu à la connexion, \code{/api/users/me} renvoie l'utilisateur connecté.}
+% ---------------------------------------------------------------- 1.2
+\subsection{Dockeriser le serveur}
 
-% ---------------------------------------------------------------- 2
-\partie{2}{Dockerisation du serveur}
-
-\subsection{Le Dockerfile du serveur}
+\subsubsection{Le Dockerfile}
 
 \begin{fichier}[docker]{server/Dockerfile}
 FROM node:24-alpine3.24
@@ -49,11 +44,11 @@ EXPOSE 3000
 CMD ["yarn", "start"]
 \end{fichier}
 
-J'installe les dépendances avant de copier le code, pour que Docker garde cette étape en cache tant que \code{yarn.lock} ne change pas. Les captures ont été prises avec l'image \code{node:22}, que j'ai remplacée ensuite par \code{node:24-alpine3.24}.
+Je copie \code{package.json} et \code{yarn.lock} avant le code pour que Docker garde \code{yarn install} en cache. Sur les captures, l'image est encore \code{node:22}, remplacée ensuite par \code{node:24-alpine3.24}.
 
-\subsection{Adapter la connexion à la base}
+\subsubsection{Lancer la base et le serveur}
 
-Dans un conteneur, \code{localhost} désigne le conteneur lui-même : le serveur lit donc l'adresse de la base dans des variables d'environnement.
+Dans un conteneur, \code{localhost} désigne le conteneur lui-même, donc le serveur ne pouvait plus trouver la base. Je lui ai fait lire l'adresse de la base dans des variables d'environnement.
 
 \begin{fichier}[typescript]{server/src/datasource.ts}
 host: process.env.DB_HOST || "localhost",
@@ -62,9 +57,7 @@ password: process.env.DB_PASSWORD || "supersecret",
 database: process.env.DB_NAME || "postgres",
 \end{fichier}
 
-\subsection{Lancer la base et le serveur}
-
-Le serveur ne peut appeler la base par son nom, \code{mfp-db}, que si les deux conteneurs partagent un réseau.
+J'ai ensuite mis les deux conteneurs sur un même réseau, sinon le nom \code{mfp-db} n'est pas résolu.
 
 \begin{commandes}
 docker network create mfp-net
@@ -78,7 +71,7 @@ docker run -d --name mfp-server --network mfp-net \
   mfp-server
 \end{commandes}
 
-\probleme{\code{address already in use} : le \code{yarn dev} de la partie 1 occupait le port 3000.}{J'ai arrêté \code{yarn dev}, supprimé le conteneur raté et relancé le serveur.}
+\probleme{\code{address already in use}, parce que le \code{yarn dev} de 1.1 tournait encore.}{J'ai arrêté \code{yarn dev}, supprimé le conteneur raté et relancé le serveur.}
 
 \begin{commandes}
 docker rm -f mfp-server
@@ -90,16 +83,54 @@ docker ps
 docker logs mfp-server
 \end{commandes}
 
-\capture[0.34\textheight]{td1-05-server-docker-logs.png}{Le serveur conteneurisé crée les tables \code{user} et \code{address} dans \code{mfp-db}, puis démarre.}
+\capture{td1-05-server-docker-logs.png}{Cette fois dans Docker, le serveur crée ses tables dans \code{mfp-db} et démarre.}
 
-\subsection{Test avec Bruno}
+\subsubsection{Test avec Bruno}
 
-\capture[0.20\textheight]{td1-06-login-docker.png}{Après avoir recréé l'utilisateur dans la base neuve, le serveur dans Docker renvoie bien un token.}
+\capture{td1-06-login-docker.png}{Après avoir recréé l'utilisateur dans la base neuve, la connexion renvoie bien un token.}
 
-% ---------------------------------------------------------------- 3
-\partie{3}{Dockerisation du client}
+% ---------------------------------------------------------------- 1.3
+% le titre reste avec sa phrase et le début du compose.yml
+\needspace{7cm}
+\subsection{Créer un compose.yml pour le serveur et la BDD}
 
-\subsection{Le Dockerfile du client}
+Compose crée le réseau tout seul et chaque service y est joignable par son nom, ce qui remplace mes \code{docker network} et \code{docker run}.
+
+\begin{fichier}{compose.yml}
+services:
+  db:
+    image: postgres:17
+    # ...
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    # ...
+  server:
+    build: ./server
+    # ...
+    ports:
+      - "3000:3000"
+\end{fichier}
+
+En pratique, j'avais déjà dockerisé le client (question 1.4) quand j'ai écrit ce fichier, et mes conteneurs lancés à la main gardaient les ports 3000 et 5173. Je les ai supprimés avant le premier \code{docker compose up}.
+
+\begin{commandes}
+docker rm -f mfp-client mfp-server mfp-db
+docker network rm mfp-net
+docker compose up -d --build
+docker compose ps
+docker compose logs server
+\end{commandes}
+
+\probleme{Avec un simple \code{depends_on}, le serveur s'arrêtait sur \code{ECONNREFUSED}.}{J'ai ajouté un \code{healthcheck} sur la base, détaillé en 2.1.}
+
+\capture{td1-09-compose-up.png}{Avec le healthcheck, le serveur attend que \code{mfp-db-1} soit \code{Healthy} et se connecte du premier coup.}
+
+Dans \code{datasource.ts}, j'ai fini par écrire le nom \code{db} en dur à la place des variables, puisque c'est toujours le nom de la base avec Compose. Le revers, c'est que le serveur ne marche plus en dehors de Compose.
+
+% ---------------------------------------------------------------- 1.4
+\subsection{Dockeriser le client et l'ajouter au compose.yml}
+
+\subsubsection{Dockeriser le client}
 
 \begin{fichier}[docker]{client/Dockerfile}
 FROM node:24-alpine3.24
@@ -111,17 +142,13 @@ EXPOSE 5173
 CMD ["yarn", "dev", "--host"]
 \end{fichier}
 
-Sans \code{--host}, Vite refuse les connexions venant de l'extérieur du conteneur.
+Sans \code{--host}, Vite n'accepterait que les connexions venant de l'intérieur du conteneur.
 
-\subsection{Adapter l'adresse de l'API}
-
-Vite relaie les appels \code{/api} vers \code{localhost:3000}, qui dans ce conteneur n'est plus le serveur : l'adresse passe donc par une variable.
+Il fallait aussi changer l'adresse vers laquelle Vite fait suivre les appels \code{/api}, parce que depuis ce conteneur, \code{localhost:3000} ne mène plus au serveur. Je l'ai mise dans une variable, comme pour la base.
 
 \begin{fichier}[typescript]{client/vite.config.ts}
 target: process.env.API_URL || "http://localhost:3000",
 \end{fichier}
-
-\subsection{Lancer le client}
 
 \begin{commandes}
 docker build -t mfp-client ./client
@@ -133,66 +160,32 @@ docker ps
 docker logs mfp-client
 \end{commandes}
 
-\capture[0.34\textheight]{td1-07-client-docker.png}{Les trois conteneurs tournent et Vite écoute sur le port 5173.}
+\capture{td1-07-client-docker.png}{Les trois conteneurs tournent, et Vite écoute sur le port 5173.}
 
-\subsection{Test dans le navigateur}
+\capture{td1-08-client-browser.png}{Je me connecte depuis le client dans Docker, donc ses appels \code{/api} arrivent bien au serveur.}
 
-\capture[0.14\textheight]{td1-08-client-browser.png}{La connexion fonctionne depuis le client conteneurisé : les appels \code{/api} atteignent le serveur.}
-
-% ---------------------------------------------------------------- 4
-\partie{4}{Orchestration avec Docker Compose}
-
-\subsection{Le fichier compose.yml}
-
-Compose crée lui-même le réseau, sur lequel chaque service est joignable par son nom.
+\subsubsection{Ajouter le client au compose.yml}
 
 \begin{fichier}{compose.yml}
-services:
-  db:
+  client:
+    build: ./client
     # ...
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 2s
-      # ...
-  server:
-    # ...
+    ports:
+      - "5173:5173"
     depends_on:
-      db:
-        condition: service_healthy
+      - server
 \end{fichier}
 
-\subsection{Lancer l'application}
-
-Les conteneurs lancés à la main occupaient encore les ports 3000 et 5173 : je les ai supprimés avant de lancer Compose.
-
-\begin{commandes}
-docker rm -f mfp-client mfp-server mfp-db
-docker network rm mfp-net
-docker compose up -d --build
-docker compose ps
-docker compose logs server
-\end{commandes}
-
-\probleme{Le serveur s'arrêtait : \code{depends_on} seul n'attend pas que PostgreSQL soit prêt.}{J'ai ajouté le \code{healthcheck} et \code{condition: service_healthy} montrés en 4.1.}
-
-\capture{td1-09-compose-up.png}{\code{mfp-db-1} devient \code{Healthy} avant le démarrage du serveur, qui se connecte du premier coup.}
-
-\subsection{Test}
-
-Le volume étant neuf, j'ai recréé l'utilisateur ; la connexion au client fonctionne ensuite comme en 3.4. L'arrêt avec \code{down} ne supprime pas le volume \code{db-data}.
+Le client a donc démarré avec le \code{docker compose up} de 1.3. Comme le volume était neuf, j'ai recréé l'utilisateur avec Bruno, puis la connexion sur le port 5173 a marché comme avant. Un \code{docker compose down} arrête tout sans effacer le volume \code{db-data}, donc les données restent.
 
 \begin{commandes}
 docker compose down
 \end{commandes}
 
-\subsection{Simplification de la connexion à la base}
-
-Avec Compose, la base s'appelle toujours \code{db} : dans \code{datasource.ts}, j'ai remplacé les variables d'environnement par cette valeur fixe, mais le serveur ne trouve plus la base hors de Compose.
-
-% ---------------------------------------------------------------- 5
+% ---------------------------------------------------------------- 1.5
 % le titre est suivi du schéma (insécable) : place pour les deux
 \Needspace{6cm}
-\partie{5}{Communication entre les services}
+\subsection{Communication entre la BDD, le serveur et le front}
 
 \begin{center}
 \begin{tikzpicture}[font=\small, >=stealth,
@@ -214,26 +207,43 @@ Avec Compose, la base s'appelle toujours \code{db} : dans \code{datasource.ts}, 
 \end{tikzpicture}
 \end{center}
 
-\subsection{Entre la base et le serveur}
+\subsubsection{Entre la BDD et le serveur}
 
-Le serveur appelle la base par son nom de service, \code{db}, que Docker résout sur le réseau \code{mfp_default}. Le port 5432 n'est publié que pour consulter la base depuis ma machine.
+Ils sont sur le même réseau, \code{mfp_default}, que Compose crée tout seul. Le serveur appelle la base par son nom de service, \code{db}, sur le port 5432, et c'est le DNS interne de Docker qui donne l'adresse IP. Je publie quand même le port 5432, mais seulement pour regarder la base depuis ma machine.
 
-\subsection{Entre le client et le serveur}
+\subsubsection{Entre le serveur et le front}
 
-Le code React s'exécute dans le navigateur, hors du réseau Docker : il appelle \code{/api} à l'adresse du site, et le conteneur \code{client} relaie ces appels vers \code{server}, d'abord avec Vite puis avec nginx.
+Le front ne parle pas directement au serveur, parce que le code React tourne dans le navigateur, en dehors du réseau Docker. Il appelle \code{/api} sur l'adresse du site, \code{localhost:5173}, et c'est le conteneur \code{client} qui fait suivre au service \code{server} (Vite au début, nginx ensuite).
 
-% ---------------------------------------------------------------- 6
-\partie{6}{Démarrage, redémarrage et images légères}
+% ================================================================ Exercice 2
+\exercice{2}{Démarrage, redémarrage et images légères}
 
-\subsection{Démarrer le serveur quand la base est prête}
+% ---------------------------------------------------------------- 2.1
+\subsection{Démarrer le serveur une fois la BDD prête}
 
-C'était déjà réglé en 4.2 avec le \code{healthcheck} de \code{db} et \code{condition: service_healthy}.
+Je l'avais déjà fait en 1.3, après le plantage du serveur au premier \code{docker compose up}. Toutes les 2 secondes, \code{pg_isready} teste la base, et le serveur attend qu'elle soit \code{healthy} pour démarrer.
 
-\subsection{Redémarrage automatique}
+\begin{fichier}{compose.yml}
+services:
+  db:
+    # ...
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      # ...
+  server:
+    # ...
+    depends_on:
+      db:
+        condition: service_healthy
+\end{fichier}
 
-Avec \code{unless-stopped}, Docker relance un service qui plante, mais pas un service que j'arrête à la main.
+% ---------------------------------------------------------------- 2.2
+\subsection{Redémarrer automatiquement les services}
 
-\begin{fichier}{compose.yml (chaque service)}
+Avec \code{unless-stopped}, Docker relance un service qui plante, mais pas un service que j'ai arrêté moi-même. J'ai mis cette ligne sur les trois services.
+
+\begin{fichier}{compose.yml}
 restart: unless-stopped
 \end{fichier}
 
@@ -249,9 +259,10 @@ docker inspect mfp-server-1 --format 'status={{.State.Status}} restarts={{.Resta
 docker compose start server
 \end{commandes}
 
-\subsection{Alléger les images}
+% ---------------------------------------------------------------- 2.3
+\subsection{Optimiser les images avec les build stages}
 
-Chaque Dockerfile passe à trois étapes. Seule la dernière devient l'image finale : les outils de construction et le code source restent dans les étapes précédentes.
+J'ai découpé chaque Dockerfile en trois étapes. Seule la dernière sert d'image finale, donc les outils de build et le code source n'y sont plus.
 
 \subsubsection{Serveur}
 
@@ -272,7 +283,7 @@ CMD ["yarn", "start"]
 
 \subsubsection{Client}
 
-Les étapes \code{deps} et \code{builder} sont celles du serveur. Une fois construit, le client n'est plus que des fichiers statiques, que nginx sert à la place de Vite ; \code{try_files} renvoie \code{index.html} pour les routes React comme \code{/dashboard}.
+Les deux premières étapes sont les mêmes que pour le serveur. Une fois buildé, le client n'est plus qu'un dossier de fichiers statiques, alors je les fais servir par nginx au lieu de Node. Le \code{try_files} sert aux routes React comme \code{/dashboard}, qui n'existent pas en tant que fichiers.
 
 \begin{fichier}[docker]{client/Dockerfile}
 # ...
@@ -295,6 +306,8 @@ server {
 }
 \end{fichier}
 
+% commandes, tableau et conclusion restent ensemble
+\needspace{8cm}
 \subsubsection{Résultat}
 
 \begin{commandes}
@@ -312,3 +325,5 @@ docker images
   \bottomrule
 \end{tabular}
 \end{center}
+
+L'image du serveur a perdu environ 140 Mo (de 477 à 337 Mo), donc plus que les 100 Mo environ demandés. Le client fond encore plus, parce que son image finale ne contient plus que nginx et les fichiers buildés.

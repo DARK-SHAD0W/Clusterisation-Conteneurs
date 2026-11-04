@@ -1,6 +1,6 @@
 # Voting App : Clusterisation de conteneurs
 
-Deuxième application du module **Clusterisation de conteneurs** (ESGI Lyon, 5ESGI AL + IABD).
+Deuxième application du module **Clusterisation de conteneurs** (ESGI Lyon, 5ESGI AL).
 <br/>Le but : faire tourner une application de vote, d'abord avec Docker Compose, puis sur notre cluster Docker Swarm, derrière Traefik.
 
 Ce document fait suite à l'[exercice 1 du TD3](../mfp/TD2.md#exercice-1--déployer-traefik), où Traefik a été déployé sur le cluster.
