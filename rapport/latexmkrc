@@ -1,0 +1,4 @@
+# XeLaTeX, with -shell-escape for minted (code highlighting with Pygments)
+$pdf_mode = 5;
+$xelatex = 'xelatex -shell-escape -interaction=nonstopmode -halt-on-error -file-line-error %O %S';
+@default_files = ('rapport.tex');

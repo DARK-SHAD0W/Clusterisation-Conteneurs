@@ -30,7 +30,10 @@ Projet du module **Clusterisation de conteneurs** (ESGI Lyon, 5ESGI AL + IABD).
 .
 ├── .github/workflows/   # construit et publie les images de mfp sur GHCR
 ├── mfp/                 # My Favorite Places et le cluster Docker Swarm (documentation dans TD2.md)
+├── rapport/             # rapport PDF des TD (rapport.pdf et ses sources LaTeX)
 └── voting-app/          # Voting App (documentation dans TD3.md)
 ```
+
+Le rapport complet des TD, en PDF : [rapport/rapport.pdf](rapport/rapport.pdf).
 
 Toutes les commandes se lancent dans un terminal **WSL (Ubuntu)**, depuis le dossier indiqué dans chaque documentation.

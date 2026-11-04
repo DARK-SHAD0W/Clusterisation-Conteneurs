@@ -1,0 +1,14 @@
+# LaTeX build files (only the sources and rapport.pdf are committed)
+*.aux
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.xdv
+*.synctex.gz
+*.listing
+*.bbl
+*.blg
+_minted*/
+test-*.pdf

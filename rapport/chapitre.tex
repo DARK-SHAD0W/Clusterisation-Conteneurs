@@ -1,0 +1,11 @@
+% Compile un seul TD pour le relire, par exemple :
+%   latexmk -xelatex -shell-escape -interaction=nonstopmode -halt-on-error \
+%           -jobname=test-td2 -usepretex='\def\chapitre{td2}' chapitre.tex < /dev/null
+% (-usepretex remplace la commande de latexmkrc : les options doivent donc être répétées ici)
+% Le rapport complet se compile simplement avec : latexmk
+\documentclass[11pt,a4paper,openany]{report}
+\usepackage{rapport}
+\begin{document}
+\phantomsection\hypertarget{sommaire}{}
+\input{\chapitre}
+\end{document}

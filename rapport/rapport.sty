@@ -1,0 +1,162 @@
+% Mise en page du rapport de TD (XeLaTeX)
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{rapport}
+
+% ---------------------------------------------------------------- polices, langue
+\RequirePackage{fontspec}
+\setmonofont{DejaVu Sans Mono}[Scale=0.82]
+\RequirePackage[french]{babel}
+\frenchsetup{SmallCapsFigTabCaptions=false,StandardItemLabels=true,og=«,fg=»}
+
+% ---------------------------------------------------------------- page
+\RequirePackage[a4paper,left=2.2cm,right=2.2cm,top=2.6cm,bottom=2.4cm,headheight=15pt]{geometry}
+\RequirePackage{xcolor}
+\RequirePackage{graphicx}
+\graphicspath{{../mfp/screenshots/}{../voting-app/screenshots/}}
+\RequirePackage{caption}
+\RequirePackage{titlesec}
+\RequirePackage{titletoc}
+\RequirePackage{fancyhdr}
+\RequirePackage{lastpage}
+\RequirePackage{enumitem}
+\RequirePackage{array}
+\RequirePackage{booktabs}
+\RequirePackage{needspace}   % \needspace{4cm} : garde un bloc court sur la même page
+\RequirePackage[most,minted]{tcolorbox}
+\RequirePackage[hidelinks,bookmarksnumbered,bookmarksopen,bookmarksopenlevel=1]{hyperref}
+\RequirePackage{bookmark}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\setlist{itemsep=1pt,topsep=2pt}
+
+% ---------------------------------------------------------------- couleurs : noir et gris uniquement
+\definecolor{td1}{HTML}{000000}
+\definecolor{td2}{HTML}{000000}
+\definecolor{td3}{HTML}{000000}
+\definecolor{td4}{HTML}{000000}
+\definecolor{gristexte}{HTML}{555555}
+\colorlet{accent}{td1}
+
+% ---------------------------------------------------------------- numérotation
+% TD = chapitre, exercice = 1, question = 1.2, étape = 1.2.a
+\setcounter{secnumdepth}{3}
+\setcounter{tocdepth}{3}
+% Le TD et l'exercice portent déjà leur numéro dans leur titre (« TD 2 : … »,
+% « Exercice 2 : … ») : leur numéro propre reste vide, pour ne pas le voir deux fois
+% dans le sommaire et dans les signets du PDF.
+\renewcommand{\thechapter}{}
+\renewcommand{\thesection}{}
+\renewcommand{\thesubsection}{\arabic{section}.\arabic{subsection}}
+\renewcommand{\thesubsubsection}{\thesubsection.\alph{subsubsection}}
+\renewcommand{\thefigure}{\arabic{chapter}.\arabic{figure}}
+% ancres uniques (les numéros d'exercice se répètent d'un TD à l'autre)
+\renewcommand{\theHchapter}{\arabic{chapter}}
+\renewcommand{\theHsection}{\arabic{chapter}.\arabic{section}}
+\renewcommand{\theHsubsection}{\theHsection.\arabic{subsection}}
+\renewcommand{\theHsubsubsection}{\theHsubsection.\alph{subsubsection}}
+\renewcommand{\theHfigure}{\arabic{chapter}.\arabic{figure}}
+% signets : pas d'espace devant un numéro vide (le pilote de hyperref le
+% redéfinit au début du document, d'où le crochet begindocument/end)
+\AddToHook{begindocument/end}{\def\Hy@numberline#1{\if\relax\detokenize\expandafter{\expanded{#1}}\relax\else#1 \fi}}
+\addto\captionsfrench{\renewcommand{\contentsname}{Sommaire}}
+
+% \td{4}{Secrets et configs}       nouveau TD (chapitre)
+% \exercice{2}{Titre}               « Exercice 2 : Titre », questions 2.1, 2.2...
+% \partie{3}{Titre}                 « 3. Titre » (TD1, numéroté par parties)
+% \prerequis{Titre}                 « Prérequis : Titre », questions 0.1, 0.2...
+\newcommand{\td}[2]{%
+  \setcounter{chapter}{\numexpr#1-1\relax}%
+  \colorlet{accent}{td#1}%
+  \chapter{TD #1 : #2}}
+% \Needspace avant chaque titre de section : s'il ne reste pas assez de place, le
+% saut de page se fait avant la cible du lien (ancre). Sans cela, un titre renvoyé
+% en haut de page laissait son ancre en bas de la page précédente, et le sommaire
+% menait une page trop tôt.
+\newcommand{\rapport@section}[1]{\Needspace{7\baselineskip}\section{#1}}
+\newcommand{\exercice}[2]{\setcounter{section}{\numexpr#1-1\relax}\rapport@section{Exercice #1 : #2}}
+\newcommand{\partie}[2]{\setcounter{section}{\numexpr#1-1\relax}\rapport@section{#1. #2}}
+\newcommand{\prerequis}[1]{\setcounter{section}{-1}\rapport@section{Prérequis : #1}}
+\newcommand{\titresection}[1]{\rapport@section{#1}}
+
+% ---------------------------------------------------------------- titres
+\titleformat{\chapter}[block]{\normalfont\huge\bfseries\color{accent}}{}{0pt}{}[\vspace{4pt}{\color{accent}\titlerule[1pt]}]
+\titlespacing*{\chapter}{0pt}{-10pt}{16pt}
+\titleformat{\section}{\normalfont\Large\bfseries\color{accent}}{}{0pt}{}
+\titlespacing*{\section}{0pt}{18pt}{6pt}
+\titleformat{\subsection}{\normalfont\large\bfseries}{\textcolor{accent}{\thesubsection}}{0.7em}{}
+\titlespacing*{\subsection}{0pt}{14pt}{4pt}
+\titleformat{\subsubsection}{\normalfont\normalsize\bfseries}{\textcolor{accent}{\thesubsubsection}}{0.6em}{}
+\titlespacing*{\subsubsection}{0pt}{10pt}{2pt}
+
+% ---------------------------------------------------------------- sommaire
+\titlecontents{chapter}[0pt]{\addvspace{9pt}\bfseries}{}{}{\hfill\contentspage}
+\titlecontents{section}[1.2em]{\addvspace{2pt}}{}{}{\titlerule*[0.7pc]{.}\contentspage}
+\titlecontents{subsection}[3.6em]{\small}{\contentslabel{2.4em}}{}{\titlerule*[0.7pc]{.}\contentspage}
+\titlecontents{subsubsection}[6.4em]{\small\color{gristexte}}{\contentslabel{2.8em}}{}{\titlerule*[0.7pc]{.}\contentspage}
+
+% ---------------------------------------------------------------- en-tête et pied de page
+\newcommand{\auteur}{Prénom NOM}
+\newcommand{\module}{Clusterisation de conteneurs, ESGI Lyon}
+\renewcommand{\chaptermark}[1]{\markboth{#1}{}}
+\renewcommand{\sectionmark}[1]{\markright{#1}}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{gristexte}\nouppercase{\leftmark}}
+\fancyhead[R]{\small\hyperlink{sommaire}{\color{gristexte}Sommaire}}
+\fancyfoot[L]{\small\auteur}
+\fancyfoot[C]{\small\color{gristexte}\module}
+\fancyfoot[R]{\small\thepage\,/\,\pageref*{LastPage}}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+\fancypagestyle{plain}{%
+  \fancyhf{}%
+  \fancyfoot[L]{\small\auteur}%
+  \fancyfoot[C]{\small\color{gristexte}\module}%
+  \fancyfoot[R]{\small\thepage\,/\,\pageref*{LastPage}}%
+  \renewcommand{\headrulewidth}{0pt}%
+  \renewcommand{\footrulewidth}{0.4pt}}
+
+% ---------------------------------------------------------------- captures
+% \capture{fichier.png}{Une ou deux phrases.}
+% \capture[0.30\textheight]{fichier.png}{...}   hauteur maximale différente
+\captionsetup{font=small,labelfont=bf,labelsep=period,justification=centering,skip=5pt,hypcap=false}
+\newcommand{\capture}[3][0.40\textheight]{%
+  \par\medskip
+  \begin{minipage}{\linewidth}\centering
+    {\setlength{\fboxsep}{0pt}\setlength{\fboxrule}{0.4pt}%
+     \fcolorbox{black!25}{white}{\includegraphics[width=\dimexpr\linewidth-0.8pt\relax,height=#1,keepaspectratio]{#2}}}%
+    \captionof{figure}{#3}
+  \end{minipage}\par\medskip}
+
+% ---------------------------------------------------------------- commandes et fichiers
+% \begin{commandes} ... \end{commandes}                      commandes bash
+% \begin{fichier}{swarm/dozzle.stack.yml} ... \end{fichier}  extrait YAML
+% \begin{fichier}[docker]{server/Dockerfile} ... \end{fichier}
+\tcbset{
+  codebox/.style={enhanced, breakable, listing only, colback=black!3, colframe=black!45,
+    boxrule=0pt, leftrule=1.5pt, arc=0pt, outer arc=0pt, left=6pt, right=4pt, top=3pt, bottom=3pt,
+    fonttitle=\footnotesize\bfseries, coltitle=black, colbacktitle=black!8,
+    toptitle=1pt, bottomtitle=1pt, before skip=6pt, after skip=8pt},
+}
+% « !O » : le titre optionnel doit suivre \begin{commandes} sur la même ligne
+% (sinon une première ligne commençant par # serait lue comme argument)
+\NewTCBListing{commandes}{ !O{Commandes} }{codebox, title={#1},
+  listing engine=minted, minted language=bash, minted style=bw,
+  minted options={fontsize=\small, breaklines, breakanywhere, autogobble}}
+\NewTCBListing{fichier}{ O{yaml} m }{codebox, title={\ttfamily #2},
+  listing engine=minted, minted language=#1, minted style=bw,
+  minted options={fontsize=\small, breaklines, breakanywhere, autogobble}}
+
+% ---------------------------------------------------------------- encadré problème / solution
+% \probleme{Ce qui n'allait pas.}{Ce que j'ai fait.}
+\newcommand{\probleme}[2]{%
+  \begin{tcolorbox}[enhanced, breakable, colback=white, colframe=black!55, boxrule=0.4pt,
+    arc=0pt, outer arc=0pt, left=6pt, before skip=6pt, after skip=8pt]
+  \small\textbf{Problème rencontré :} #1\par\smallskip
+  \textbf{Solution :} #2
+  \end{tcolorbox}}
+
+% ---------------------------------------------------------------- texte
+% \code{nom_de_service}  : texte en police fixe (pas de % ni de # dedans)
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
