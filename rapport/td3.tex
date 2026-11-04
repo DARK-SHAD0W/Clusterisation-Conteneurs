@@ -16,9 +16,9 @@ J'ai publié le port 80 du manager dans \code{mfp/swarm/compose.yml}, pour la qu
 \end{fichier}
 
 \begin{commandes}
-cd mfp/swarm
-docker compose up -d
-docker compose exec manager docker node ls
+  \cmd{cd mfp/swarm}
+  \cmd{docker compose up -d}
+  \cmd{docker compose exec manager docker node ls}
 \end{commandes}
 
 Seul le manager a été recréé, \code{docker node ls} affiche toujours les 4 nœuds \code{Ready}.
@@ -28,14 +28,13 @@ Seul le manager a été recréé, \code{docker node ls} affiche toujours les 4 n
 J'ai créé le réseau \code{web} en overlay, supprimé les services du TD~2, puis déployé la stack du cours (\code{traefik.compose.yml}).
 
 \begin{commandes}
-docker compose exec manager docker network create --driver overlay web
-docker compose exec manager docker network ls --filter name=web
-docker compose exec manager docker stack rm hello
-docker compose exec manager docker service rm web
-docker compose cp traefik.compose.yml manager:/home/manager/
-docker compose exec manager docker stack deploy \
-  -c /home/manager/traefik.compose.yml traefik
-docker compose exec manager docker service ls
+  \cmd{docker compose exec manager docker network create --driver overlay web}
+  \cmd{docker compose exec manager docker network ls --filter name=web}
+  \cmd{docker compose exec manager docker stack rm hello}
+  \cmd{docker compose exec manager docker service rm web}
+  \cmd{docker compose cp traefik.compose.yml manager:/home/manager/}
+  \cmd{docker compose exec manager docker stack deploy -c /home/manager/traefik.compose.yml traefik}
+  \cmd{docker compose exec manager docker service ls}
 \end{commandes}
 
 \capture{td3-03-traefik-deploy.png}{\code{traefik_traefik} et \code{traefik_whoami} tournent, seul Traefik publie un port.}
@@ -59,24 +58,24 @@ J'ai ajouté ces lignes au fichier hosts de Windows (\texttt{C:\textbackslash Wi
 \subsection{Tester l'application avec Docker Compose}
 
 \begin{commandes}
-cd ../../voting-app
-docker compose up -d
+  \cmd{cd ../../voting-app}
+  \cmd{docker compose up -d}
 \end{commandes}
 
 \probleme{le téléchargement des images a échoué avec \code{429 Too Many Requests}, la limite de Docker Hub sans compte. Je me suis connecté avec \code{docker login}, puis j'ai relancé.}
 
 \begin{commandes}
-docker login
-docker compose up -d
-docker compose ps --format 'table {{.Name}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
-curl -X POST -d vote=a http://localhost:8080/   # 3 fois
-curl -X POST -d vote=b http://localhost:8080/   # 2 fois
+  \cmd{docker login}
+  \cmd{docker compose up -d}
+  \cmd{docker compose ps --format 'table \{\{.Name\}\}\textbackslash{}t\{\{.Image\}\}\textbackslash{}t\{\{.Status\}\}\textbackslash{}t\{\{.Ports\}\}'}
+  \cmd{curl -X POST -d vote=a http://localhost:8080/} (3 fois)
+  \cmd{curl -X POST -d vote=b http://localhost:8080/} (2 fois)
 \end{commandes}
 
 \capture{td3-09-result-local.png}{Les 5 votes envoyés (3 Cats, 2 Dogs) apparaissent sur la page des résultats.}
 
 \begin{commandes}
-docker compose down
+  \cmd{docker compose down}
 \end{commandes}
 
 \subsection{Déployer l'application sur le cluster Swarm}
@@ -84,12 +83,11 @@ docker compose down
 Je me suis connecté à Docker Hub dans le manager, et \code{--with-registry-auth} transmet cette connexion aux nœuds.
 
 \begin{commandes}
-cd ../mfp/swarm
-docker compose exec manager docker login
-docker compose cp ../../voting-app/docker-stack.yml manager:/home/manager/
-docker compose exec manager docker stack deploy --with-registry-auth \
-  -c /home/manager/docker-stack.yml voting
-docker compose exec manager docker stack services voting
+  \cmd{cd ../mfp/swarm}
+  \cmd{docker compose exec manager docker login}
+  \cmd{docker compose cp ../../voting-app/docker-stack.yml manager:/home/manager/}
+  \cmd{docker compose exec manager docker stack deploy --with-registry-auth -c /home/manager/docker-stack.yml voting}
+  \cmd{docker compose exec manager docker stack services voting}
 \end{commandes}
 
 Au bout d'une minute, les 5 services sont en ligne, mais les ports 8080 et 8081 ne sont pas joignables depuis mon PC.
@@ -112,10 +110,9 @@ Dans une copie de la stack, \code{docker-stack.traefik.yml}, j'ai remplacé les 
 \end{fichier}
 
 \begin{commandes}
-docker compose cp ../../voting-app/docker-stack.traefik.yml manager:/home/manager/
-docker compose exec manager docker stack deploy --with-registry-auth \
-  -c /home/manager/docker-stack.traefik.yml voting
-docker compose exec manager docker stack services voting
+  \cmd{docker compose cp ../../voting-app/docker-stack.traefik.yml manager:/home/manager/}
+  \cmd{docker compose exec manager docker stack deploy --with-registry-auth -c /home/manager/docker-stack.traefik.yml voting}
+  \cmd{docker compose exec manager docker stack services voting}
 \end{commandes}
 
 \begin{fichier}[text]
@@ -126,8 +123,8 @@ docker compose exec manager docker stack services voting
 \capture{td3-15-traefik-routers.png}{Les routeurs \code{vote@swarm} et \code{result@swarm} dans Traefik.}
 
 \begin{commandes}
-curl -X POST -d vote=a http://vote.swarm.localhost/   # 2 fois
-curl -X POST -d vote=b http://vote.swarm.localhost/   # 3 fois
+  \cmd{curl -X POST -d vote=a http://vote.swarm.localhost/} (2 fois)
+  \cmd{curl -X POST -d vote=b http://vote.swarm.localhost/} (3 fois)
 \end{commandes}
 
 \capture{td3-14-result-traefik.png}{\code{result.swarm.localhost} affiche les 5 votes envoyés au cluster (2 Cats, 3 Dogs).}
@@ -140,14 +137,11 @@ curl -X POST -d vote=b http://vote.swarm.localhost/   # 3 fois
 J'ai utilisé la stack de la documentation de Portainer pour Swarm.
 
 \begin{commandes}
-curl -sL https://downloads.portainer.io/ce-lts/portainer-agent-stack.yml \
-  -o portainer-agent-stack.yml
-docker compose cp portainer-agent-stack.yml manager:/home/manager/
-docker compose exec manager docker stack deploy --with-registry-auth \
-  -c /home/manager/portainer-agent-stack.yml portainer
-docker compose exec manager docker stack services portainer
-docker compose exec manager docker ps --filter name=portainer \
-  --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+  \cmd{curl -sL https://downloads.portainer.io/ce-lts/portainer-agent-stack.yml -o portainer-agent-stack.yml}
+  \cmd{docker compose cp portainer-agent-stack.yml manager:/home/manager/}
+  \cmd{docker compose exec manager docker stack deploy --with-registry-auth -c /home/manager/portainer-agent-stack.yml portainer}
+  \cmd{docker compose exec manager docker stack services portainer}
+  \cmd{docker compose exec manager docker ps --filter name=portainer --format 'table \{\{.Names\}\}\textbackslash{}t\{\{.Image\}\}\textbackslash{}t\{\{.Status\}\}'}
 \end{commandes}
 
 \capture{td3-16-portainer-deploy.png}{Un agent sur chacun des 4 nœuds, et l'interface sur le manager.}
@@ -170,10 +164,9 @@ J'ai ajouté le réseau \code{web} et les labels Traefik (port 9000) au service 
 \end{fichier}
 
 \begin{commandes}
-docker compose cp portainer-agent-stack.traefik.yml manager:/home/manager/
-docker compose exec manager docker stack deploy --with-registry-auth \
-  -c /home/manager/portainer-agent-stack.traefik.yml portainer
-docker compose exec manager docker stack services portainer
+  \cmd{docker compose cp portainer-agent-stack.traefik.yml manager:/home/manager/}
+  \cmd{docker compose exec manager docker stack deploy --with-registry-auth -c /home/manager/portainer-agent-stack.traefik.yml portainer}
+  \cmd{docker compose exec manager docker stack services portainer}
 \end{commandes}
 
 \subsection{Ouvrir Portainer dans le navigateur}
@@ -185,8 +178,7 @@ docker compose exec manager docker stack services portainer
 Au premier lancement, Portainer demande le setup token qu'il écrit dans ses logs.
 
 \begin{commandes}
-docker compose exec manager docker service logs --raw portainer_portainer 2>&1 \
-  | grep -A2 setup_token=
+  \cmd{docker compose exec manager docker service logs --raw portainer\_portainer 2>\&1 | grep -A2 setup\_token=}
 \end{commandes}
 
 J'ai ensuite créé le compte \code{admin}.
@@ -199,9 +191,9 @@ J'ai ensuite créé le compte \code{admin}.
 \subsection{Supprimer la stack depuis le manager}
 
 \begin{commandes}
-docker compose exec manager docker stack ls
-docker compose exec manager docker stack rm voting
-docker compose exec manager docker stack ls
+  \cmd{docker compose exec manager docker stack ls}
+  \cmd{docker compose exec manager docker stack rm voting}
+  \cmd{docker compose exec manager docker stack ls}
 \end{commandes}
 
 \code{voting} n'apparaît plus dans le second \code{docker stack ls}.
@@ -250,10 +242,10 @@ J'ai créé la stack \code{mfp} depuis Portainer, comme en 4.2.
 J'ai fait une copie de la collection Bruno et changé son adresse avec \code{sed}.
 
 \begin{commandes}
-cd ..
-cp -r mfp-bruno-api-test-collection ~/mfp-bruno-swarm
-sed -i 's#http://localhost:3000#http://api.swarm.localhost#' ~/mfp-bruno-swarm/*.yml
-cd ~/mfp-bruno-swarm && bru run
+  \cmd{cd ..}
+  \cmd{cp -r mfp-bruno-api-test-collection \textasciitilde{}/mfp-bruno-swarm}
+  \cmd{sed -i 's\#http://localhost:3000\#http://api.swarm.localhost\#' \textasciitilde{}/mfp-bruno-swarm/*.yml}
+  \cmd{cd \textasciitilde{}/mfp-bruno-swarm \&\& bru run}
 \end{commandes}
 
 \capture{td3-33-bruno-swarm.png}{Les 3 requêtes de la collection passent sur \code{api.swarm.localhost}.}

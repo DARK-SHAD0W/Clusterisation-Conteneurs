@@ -10,15 +10,11 @@
 Le serveur ne démarre pas sans PostgreSQL, j'ai donc lancé une base avant \code{yarn dev}, avec le mot de passe de \code{server/src/datasource.ts}.
 
 \begin{commandes}
-docker run -d --name mfp-db \
-  -e POSTGRES_PASSWORD=supersecret \
-  -p 5432:5432 \
-  postgres:17
-docker ps
-
-cd server
-yarn install
-yarn dev
+  \cmd{docker run -d --name mfp-db -e POSTGRES\_PASSWORD=supersecret -p 5432:5432 postgres:17}
+  \cmd{docker ps}
+  \cmd{cd server}
+  \cmd{yarn install}
+  \cmd{yarn dev}
 \end{commandes}
 
 \capture{td1-00-yarn-dev.png}{\code{yarn dev} se connecte à la base et démarre le serveur sur le port 3000.}
@@ -54,29 +50,21 @@ database: process.env.DB_NAME || "postgres",
 J'ai recréé la base sur un réseau \code{mfp-net}, partagé avec le serveur.
 
 \begin{commandes}
-cd ..
-docker rm -f mfp-db
-docker network create mfp-net
-docker run -d --name mfp-db --network mfp-net \
-  -e POSTGRES_PASSWORD=supersecret \
-  postgres:17
-docker build -t mfp-server ./server
-docker run -d --name mfp-server --network mfp-net \
-  -e DB_HOST=mfp-db \
-  -p 3000:3000 \
-  mfp-server
+  \cmd{cd ..}
+  \cmd{docker rm -f mfp-db}
+  \cmd{docker network create mfp-net}
+  \cmd{docker run -d --name mfp-db --network mfp-net -e POSTGRES\_PASSWORD=supersecret postgres:17}
+  \cmd{docker build -t mfp-server ./server}
+  \cmd{docker run -d --name mfp-server --network mfp-net -e DB\_HOST=mfp-db -p 3000:3000 mfp-server}
 \end{commandes}
 
 \probleme{le conteneur du serveur n'a pas démarré (\code{address already in use}), car le \code{yarn dev} de 1.1 occupait encore le port 3000. Je l'ai arrêté, puis j'ai supprimé le conteneur et je l'ai relancé.}
 
 \begin{commandes}
-docker rm -f mfp-server
-docker run -d --name mfp-server --network mfp-net \
-  -e DB_HOST=mfp-db \
-  -p 3000:3000 \
-  mfp-server
-docker ps
-docker logs mfp-server
+  \cmd{docker rm -f mfp-server}
+  \cmd{docker run -d --name mfp-server --network mfp-net -e DB\_HOST=mfp-db -p 3000:3000 mfp-server}
+  \cmd{docker ps}
+  \cmd{docker logs mfp-server}
 \end{commandes}
 
 \capture{td1-05-server-docker-logs.png}{Le serveur crée les tables \code{user} et \code{address} dans \code{mfp-db} et démarre.}
@@ -126,13 +114,10 @@ target: process.env.API_URL || "http://localhost:3000",
 \end{fichier}
 
 \begin{commandes}
-docker build -t mfp-client ./client
-docker run -d --name mfp-client --network mfp-net \
-  -e API_URL=http://mfp-server:3000 \
-  -p 5173:5173 \
-  mfp-client
-docker ps
-docker logs mfp-client
+  \cmd{docker build -t mfp-client ./client}
+  \cmd{docker run -d --name mfp-client --network mfp-net -e API\_URL=http://mfp-server:3000 -p 5173:5173 mfp-client}
+  \cmd{docker ps}
+  \cmd{docker logs mfp-client}
 \end{commandes}
 
 \capture{td1-07-client-docker.png}{\code{mfp-db}, \code{mfp-server} et \code{mfp-client} sont \code{Up}, Vite écoute sur le port 5173.}
@@ -154,18 +139,18 @@ docker logs mfp-client
 J'ai supprimé les conteneurs lancés à la main, qui occupaient encore les ports 3000 et 5173.
 
 \begin{commandes}
-docker rm -f mfp-client mfp-server mfp-db
-docker network rm mfp-net
-docker compose up -d --build
-docker compose ps
-docker compose logs server
+  \cmd{docker rm -f mfp-client mfp-server mfp-db}
+  \cmd{docker network rm mfp-net}
+  \cmd{docker compose up -d --build}
+  \cmd{docker compose ps}
+  \cmd{docker compose logs server}
 \end{commandes}
 
 \probleme{avec un simple \code{depends_on}, le serveur s'arrêtait sur \code{ECONNREFUSED}, parce qu'il démarrait avant PostgreSQL. J'ai ajouté le healthcheck de la question 2.1, puis j'ai relancé.}
 
 \begin{commandes}
-docker compose up -d
-docker compose logs server
+  \cmd{docker compose up -d}
+  \cmd{docker compose logs server}
 \end{commandes}
 
 \capture{td1-09-compose-up.png}{Le serveur attend que \code{mfp-db-1} soit \code{Healthy}, puis se connecte à la base.}
@@ -173,7 +158,7 @@ docker compose logs server
 Le volume étant neuf, j'ai recréé l'utilisateur avec Bruno, et la connexion sur le port 5173 a marché. Ensuite, j'ai mis le nom \code{db} en dur dans \code{datasource.ts}, à la place des variables.
 
 \begin{commandes}
-docker compose down
+  \cmd{docker compose down}
 \end{commandes}
 
 % ---------------------------------------------------------------- 1.5
@@ -217,13 +202,11 @@ restart: unless-stopped
 \end{fichier}
 
 \begin{commandes}
-docker compose exec server pkill -f "node dist/index.js"
-docker inspect mfp-server-1 \
-  --format 'status={{.State.Status}} restarts={{.RestartCount}}'
-docker compose stop server
-docker inspect mfp-server-1 \
-  --format 'status={{.State.Status}} restarts={{.RestartCount}}'
-docker compose start server
+  \cmd{docker compose exec server pkill -f "node dist/index.js"}
+  \cmd{docker inspect mfp-server-1 --format 'status=\{\{.State.Status\}\} restarts=\{\{.RestartCount\}\}'}
+  \cmd{docker compose stop server}
+  \cmd{docker inspect mfp-server-1 --format 'status=\{\{.State.Status\}\} restarts=\{\{.RestartCount\}\}'}
+  \cmd{docker compose start server}
 \end{commandes}
 
 Après le \code{pkill}, le premier \code{inspect} affiche \code{status=running restarts=1}, donc le serveur a été relancé. Après \code{docker compose stop}, le second affiche \code{status=exited restarts=1} : il reste arrêté.
@@ -276,8 +259,8 @@ server {
 \subsubsection{Résultat}
 
 \begin{commandes}
-docker compose up -d --build
-docker images
+  \cmd{docker compose up -d --build}
+  \cmd{docker images}
 \end{commandes}
 
 Dans \code{docker images}, \code{mfp-server} passe de 477 Mo à 337 Mo, soit 140 Mo de moins, et \code{mfp-client} de 1,49 Go à 93 Mo.

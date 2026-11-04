@@ -4,7 +4,7 @@
 
 % ---------------------------------------------------------------- polices, langue
 \RequirePackage{fontspec}
-\setmonofont{DejaVu Sans Mono}[Scale=0.82]
+\setmonofont{DejaVu Sans Mono}[Scale=0.82, HyphenChar=None] % pas de coupure après un « - » dans une commande
 \RequirePackage[french]{babel}
 \frenchsetup{SmallCapsFigTabCaptions=false,StandardItemLabels=true,og=«,fg=»}
 
@@ -129,14 +129,26 @@
     \captionof{figure}{#3}
   \end{minipage}\par\medskip}
 
-% ---------------------------------------------------------------- commandes et fichiers
-% \begin{commandes} ... \end{commandes}      commandes bash
+% ---------------------------------------------------------------- commandes
+% Une commande par puce, dans l'ordre où je les ai lancées :
+% \begin{commandes}
+%   \cmd{docker compose up -d}
+%   \cmd{curl -X POST -d vote=a http://localhost:8080/} (3 fois)
+% \end{commandes}
+% Caractères spéciaux échappés (\$, \#, \%, \_, \{, \}, \textbackslash{}) ;
+% une commande trop longue continue sur la ligne suivante, comme du texte.
+\newenvironment{commandes}%
+  {\begin{itemize}[nosep, topsep=3pt, partopsep=0pt, after=\vspace{2pt}]\raggedright}%
+  {\end{itemize}}
+\newcommand{\cmd}[1]{\item \texttt{#1}}
+
+% ---------------------------------------------------------------- fichiers
 % \begin{fichier} ... \end{fichier}          extrait YAML
 % \begin{fichier}[docker] ... \end{fichier}  autre langage
 % Couleurs du thème « Dark+ » de VS Code : style Pygments « vscode » fourni dans
 % pygments-vscode/ (latexmkrc l'ajoute au PYTHONPATH).
-% Pas de retour à la ligne automatique : les lignes longues sont coupées à la
-% main avec « \ », et le journal signale tout dépassement (Overfull \hbox).
+% Pas de retour à la ligne automatique dans les extraits : le journal signale
+% tout dépassement (Overfull \hbox).
 \definecolor{vsfond}{HTML}{1E1E1E}
 \definecolor{vstexte}{HTML}{D4D4D4}
 \definecolor{vsbord}{HTML}{3C3C3C}
@@ -145,9 +157,6 @@
     colframe=vsbord, boxrule=0.5pt, arc=2pt, outer arc=2pt, left=8pt, right=6pt,
     top=4pt, bottom=4pt, before skip=6pt, after skip=8pt},
 }
-\NewTCBListing{commandes}{}{codebox,
-  listing engine=minted, minted language=bash, minted style=vscode,
-  minted options={fontsize=\small, autogobble}}
 % « !O » : le langage optionnel doit suivre \begin{fichier} sur la même ligne
 % (sinon une première ligne commençant par [ serait lue comme argument)
 \NewTCBListing{fichier}{ !O{yaml} }{codebox,
