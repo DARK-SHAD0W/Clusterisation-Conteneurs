@@ -34,6 +34,7 @@ Ce document raconte la démarche, étape par étape (retour au [sommaire génér
 
 - [Prérequis : relancer le cluster et passer en HTTPS](#prérequis--relancer-le-cluster-et-passer-en-https)
 - [Exercice 1 : déployer des logiciels](#exercice-1--déployer-des-logiciels) (Dozzle, Authelia, Outline)
+- [Les tableaux de bord](#les-tableaux-de-bord) (Traefik, Portainer, Authelia, Dozzle, Outline)
 - [Bilan : les secrets et les configs du cluster](#bilan--les-secrets-et-les-configs-du-cluster)
 
 ## Structure du dossier
@@ -2235,6 +2236,94 @@ Après la connexion, Authelia demande le consentement pour **Outline**, avec le 
 </p>
 
 On arrive sur Outline, connecté en tant qu'**Ahmed**. À cette première connexion, Outline a créé l'espace de travail et sa collection « Welcome ».
+
+### Les tableaux de bord
+
+Pour finir, un tour de chaque interface une fois tout déployé (navigateur en mode clair).
+
+**Traefik**, sur http://traefik.swarm.localhost, menu **HTTP Routers** :
+
+<p align="center">
+  <img src="screenshots/td4-37-traefik-routers.png" alt="Les routeurs HTTP dans le tableau de bord de Traefik">
+</p>
+
+- Les routeurs d'Authelia, de Dozzle et d'Outline passent par `websecure` et portent le bouclier **TLS** : ils sont servis en HTTPS, avec notre certificat.
+- `whoami` a 2 routeurs, un par point d'entrée (`web` et `websecure`).
+- Le routeur `to-https`, en priorité 1, récupère tout le reste du trafic http pour le rediriger vers `https://`.
+
+**Portainer**, sur http://portainer.swarm.localhost avec le compte `admin`. Le tableau de bord de l'environnement `primary` :
+
+<p align="center">
+  <img src="screenshots/td4-38-portainer-dashboard.png" alt="Tableau de bord de Portainer">
+</p>
+
+Il résume le cluster : ses 4 nœuds, puis le nombre de stacks, services, conteneurs, images, volumes et réseaux.
+
+**Les stacks** :
+
+<p align="center">
+  <img src="screenshots/td4-39-portainer-stacks.png" alt="Les 5 stacks dans Portainer">
+</p>
+
+Nos 5 stacks : `authelia`, `dozzle`, `outline`, `portainer` et `traefik`. Elles sont toutes **Limited**, car créées en ligne de commande : Portainer ne peut pas modifier leur fichier.
+
+**Les secrets** :
+
+<p align="center">
+  <img src="screenshots/td4-40-portainer-secrets.png" alt="Les 14 secrets du cluster dans Portainer">
+</p>
+
+On retrouve les 14 secrets du TD4. Un clic sur `dozzle_users`, celui créé depuis Portainer à la question 1.1 :
+
+<p align="center">
+  <img src="screenshots/td4-41-portainer-secret-detail.png" alt="Le détail du secret dozzle_users">
+</p>
+
+Portainer n'affiche que son nom et ses dates. Pas de contenu, et aucun moyen de le modifier : le seul bouton est **Delete this secret**.
+
+**Les configs** :
+
+<p align="center">
+  <img src="screenshots/td4-42-portainer-configs.png" alt="Les 4 configs du cluster dans Portainer">
+</p>
+
+Les 4 configs du TD4. Un clic sur `traefik_tls` :
+
+<p align="center">
+  <img src="screenshots/td4-43-portainer-config-detail.png" alt="Le détail de la config traefik_tls, avec son contenu">
+</p>
+
+À l'inverse du secret, la config affiche son contenu (**Config content**). Elle ne se modifie pas pour autant : Portainer propose **Clone config**, c'est-à-dire en créer une nouvelle à partir de celle-ci.
+
+**Authelia**, sur https://authelia.swarm.localhost/settings/security avec le compte `ahmed` :
+
+<p align="center">
+  <img src="screenshots/td4-44-authelia-account.png" alt="L'espace du compte ahmed dans Authelia">
+</p>
+
+L'espace du compte affiche le nom et l'adresse mail lus dans le secret `authelia_users`. Le mot de passe, lui, n'est jamais affiché.
+
+**Dozzle**, sur https://dozzle.swarm.localhost, connecté par Authelia :
+
+<p align="center">
+  <img src="screenshots/td4-45-dozzle-dashboard.png" alt="Tableau de bord de Dozzle avec les 9 services">
+</p>
+
+Les 4 nœuds, avec leur CPU et leur mémoire, et les 9 services du cluster, rangés par stack. En cliquant sur `traefik_traefik`, on suit ses logs en direct :
+
+<p align="center">
+  <img src="screenshots/td4-46-dozzle-logs.png" alt="Les logs d'accès de Traefik dans Dozzle">
+</p>
+
+Ce sont les logs d'accès de Traefik : chaque requête de Dozzle passe par le routeur `dozzle@swarm` avant d'arriver à un des conteneurs Dozzle.
+
+**Outline**, sur https://outline.swarm.localhost, connecté par Authelia :
+
+<p align="center">
+  <img src="screenshots/td4-47-outline-doc.png" alt="Un document de la collection Welcome dans Outline">
+</p>
+
+Un des documents de la collection « Welcome », ouvert par **Ahmed** : le wiki fonctionne.
 
 ### Bilan : les secrets et les configs du cluster
 
