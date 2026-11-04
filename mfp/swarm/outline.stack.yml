@@ -1,0 +1,95 @@
+# Outline (TD4 ex. 1.3, bonus): a wiki on outline.swarm.localhost, login through Authelia (OpenID Connect).
+# Every password and key is a swarm secret, read through the *_FILE variables.
+services:
+  outline:
+    image: outlinewiki/outline:1.12.0
+    environment:
+      URL: https://outline.swarm.localhost
+      PORT: 3000
+      FORCE_HTTPS: "false" # Traefik already handles https
+      SECRET_KEY_FILE: /run/secrets/outline_secret_key
+      UTILS_SECRET_FILE: /run/secrets/outline_utils_secret
+      DATABASE_URL_FILE: /run/secrets/outline_database_url
+      PGSSLMODE: disable
+      REDIS_URL: redis://redis:6379
+      FILE_STORAGE: local
+      FILE_STORAGE_LOCAL_ROOT_DIR: /var/lib/outline/data
+      # login with Authelia (client "outline" in authelia.configuration.yml)
+      OIDC_CLIENT_ID: outline
+      OIDC_CLIENT_SECRET_FILE: /run/secrets/outline_oidc_secret
+      OIDC_AUTH_URI: https://authelia.swarm.localhost/api/oidc/authorization
+      OIDC_TOKEN_URI: https://authelia.swarm.localhost/api/oidc/token
+      OIDC_USERINFO_URI: https://authelia.swarm.localhost/api/oidc/userinfo
+      OIDC_USERNAME_CLAIM: preferred_username
+      OIDC_DISPLAY_NAME: Authelia
+      OIDC_SCOPES: openid offline_access profile email
+      # trust our local CA, to call https://authelia.swarm.localhost from the container
+      NODE_EXTRA_CA_CERTS: /certs/ca.crt
+    configs:
+      - source: swarm_ca
+        target: /certs/ca.crt
+    secrets:
+      - outline_secret_key
+      - outline_utils_secret
+      - outline_database_url
+      - outline_oidc_secret
+    volumes:
+      - outline_data:/var/lib/outline/data
+    networks:
+      - default
+      - web
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.outline.rule=Host(`outline.swarm.localhost`)"
+        - "traefik.http.routers.outline.entrypoints=websecure"
+        - "traefik.http.services.outline.loadbalancer.server.port=3000"
+
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: outline
+      POSTGRES_DB: outline
+      POSTGRES_PASSWORD_FILE: /run/secrets/outline_db_password
+    secrets:
+      - outline_db_password
+    volumes:
+      - outline_db:/var/lib/postgresql/data
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager # its volume stays on the same node
+
+  redis:
+    image: redis:7-alpine
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+
+networks:
+  web:
+    external: true
+
+volumes:
+  outline_data:
+  outline_db:
+
+configs:
+  swarm_ca:
+    external: true
+
+secrets:
+  outline_secret_key:
+    external: true
+  outline_utils_secret:
+    external: true
+  outline_database_url:
+    external: true
+  outline_db_password:
+    external: true
+  outline_oidc_secret:
+    external: true

@@ -17,6 +17,7 @@ Projet du module **Clusterisation de conteneurs** (ESGI Lyon, 5ESGI AL + IABD).
 - [TD3 : Traefik, exercice 1](mfp/TD2.md#td3)
 - [TD3 : Portainer, exercice 3](mfp/TD2.md#exercice-3--déployer-portainer)
 - [TD3 : Portainer, exercice 4.4 (API de MFP)](mfp/TD2.md#exercice-4--déployer-lapi-de-mfp-depuis-portainer)
+- [TD4 : secrets et configs (Dozzle, Authelia, Outline)](mfp/TD2.md#td4)
 
 **Voting App**
 

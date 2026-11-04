@@ -30,6 +30,12 @@ Ce document raconte la démarche, étape par étape (retour au [sommaire génér
 - [Exercice 3 : déployer Portainer](#exercice-3--déployer-portainer)
 - [Exercice 4 : déployer l'API de MFP depuis Portainer](#exercice-4--déployer-lapi-de-mfp-depuis-portainer)
 
+**TD4**
+
+- [Prérequis : relancer le cluster et passer en HTTPS](#prérequis--relancer-le-cluster-et-passer-en-https)
+- [Exercice 1 : déployer des logiciels](#exercice-1--déployer-des-logiciels) (Dozzle, Authelia, Outline)
+- [Bilan : les secrets et les configs du cluster](#bilan--les-secrets-et-les-configs-du-cluster)
+
 ## Structure du dossier
 
 ```
@@ -2055,3 +2061,196 @@ On accepte, et on arrive sur Dozzle. Le menu de l'utilisateur, en haut à droite
 </p>
 
 On est connecté à Dozzle en tant qu'**Ahmed** (`ahmed@swarm.localhost`) : le compte du secret `authelia_users`, vérifié par Authelia.
+
+### 1.3 Bonus : Outline
+
+**Outline** est un wiki d'équipe. Il a besoin d'une base PostgreSQL et d'un Redis, et sait se connecter à un fournisseur OpenID Connect.
+
+**Les secrets d'Outline.** Outline accepte, lui aussi, des variables `_FILE`. Toutes ses valeurs sensibles deviennent donc des secrets :
+
+```bash
+PW=$(openssl rand -hex 24)
+printf %s "$PW" | docker compose exec -T manager docker secret create outline_db_password -
+printf %s "postgres://outline:$PW@postgres:5432/outline" | docker compose exec -T manager docker secret create outline_database_url -
+for s in outline_secret_key outline_utils_secret; do openssl rand -hex 32 | tr -d "\n" | docker compose exec -T manager docker secret create $s -; done
+openssl rand -hex 36 | tr -d "\n" > secrets/outline_oidc_secret
+docker run --rm authelia/authelia:4.39 authelia crypto hash generate pbkdf2 --variant sha512 --password "$(cat secrets/outline_oidc_secret)"
+docker compose exec -T manager docker secret create outline_oidc_secret - < secrets/outline_oidc_secret
+```
+
+<p align="center">
+  <img src="screenshots/td4-31-outline-secrets.png" alt="Les secrets d'Outline">
+</p>
+
+- Le mot de passe de la base est tiré une seule fois, dans la variable `PW`, puis utilisé par 2 secrets : celui de PostgreSQL (`outline_db_password`) et l'adresse complète de la base pour Outline (`outline_database_url`). Il n'est jamais écrit sur le disque.
+- Comme pour Dozzle, le client secret d'Outline va dans un secret, et son empreinte dans la configuration d'Authelia.
+
+**Un nouveau client dans Authelia.** On ajoute le client `outline` à `authelia.configuration.yml`, avec les réglages de la documentation d'Authelia pour Outline :
+
+```yaml
+      # Bonus: Outline (TD4 ex. 1.3)
+      - client_id: 'outline'
+        client_name: 'Outline'
+        # pbkdf2 digest of the secret stored in the swarm secret outline_oidc_secret
+        client_secret: '$pbkdf2-sha512$310000$wCiCZEIFdWY54dzdbN8SBQ$0Amgl90xzgb7n7V7CaYnJXa1A.l.kXpiReHdVhUukmDlbS27r1pejoF6AYE/oc3/FGQTa74loB8idUZSFWcBLw'
+        public: false
+        authorization_policy: 'one_factor'
+        redirect_uris:
+          - 'https://outline.swarm.localhost/auth/oidc.callback'
+        scopes:
+          - 'openid'
+          - 'offline_access' # Outline uses a refresh token
+          - 'profile'
+          - 'email'
+        response_types:
+          - 'code'
+        grant_types:
+          - 'authorization_code'
+          - 'refresh_token'
+        token_endpoint_auth_method: 'client_secret_post'
+```
+
+Comme le rappelle l'énoncé, la config ne se met pas à jour : on la supprime, puis on la recrée, exactement comme à la question 1.2.
+
+```bash
+docker compose exec manager docker stack rm authelia
+docker compose exec manager docker config rm authelia_config
+docker compose exec -T manager docker config create authelia_config - < authelia.configuration.yml
+docker compose exec manager docker stack deploy -c /home/manager/authelia.stack.yml authelia
+docker compose exec manager docker service ls --filter name=authelia
+```
+
+<p align="center">
+  <img src="screenshots/td4-32-authelia-config-outline.png" alt="La config d'Authelia recréée avec le client outline">
+</p>
+
+**La stack**, `swarm/outline.stack.yml` :
+
+```yaml
+services:
+  outline:
+    image: outlinewiki/outline:1.12.0
+    environment:
+      URL: https://outline.swarm.localhost
+      PORT: 3000
+      FORCE_HTTPS: "false" # Traefik already handles https
+      SECRET_KEY_FILE: /run/secrets/outline_secret_key
+      UTILS_SECRET_FILE: /run/secrets/outline_utils_secret
+      DATABASE_URL_FILE: /run/secrets/outline_database_url
+      PGSSLMODE: disable
+      REDIS_URL: redis://redis:6379
+      FILE_STORAGE: local
+      FILE_STORAGE_LOCAL_ROOT_DIR: /var/lib/outline/data
+      # login with Authelia (client "outline" in authelia.configuration.yml)
+      OIDC_CLIENT_ID: outline
+      OIDC_CLIENT_SECRET_FILE: /run/secrets/outline_oidc_secret
+      OIDC_AUTH_URI: https://authelia.swarm.localhost/api/oidc/authorization
+      OIDC_TOKEN_URI: https://authelia.swarm.localhost/api/oidc/token
+      OIDC_USERINFO_URI: https://authelia.swarm.localhost/api/oidc/userinfo
+      OIDC_USERNAME_CLAIM: preferred_username
+      OIDC_DISPLAY_NAME: Authelia
+      OIDC_SCOPES: openid offline_access profile email
+      # trust our local CA, to call https://authelia.swarm.localhost from the container
+      NODE_EXTRA_CA_CERTS: /certs/ca.crt
+    configs:
+      - source: swarm_ca
+        target: /certs/ca.crt
+    secrets:
+      - outline_secret_key
+      - outline_utils_secret
+      - outline_database_url
+      - outline_oidc_secret
+    volumes:
+      - outline_data:/var/lib/outline/data
+    networks:
+      - default
+      - web
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.outline.rule=Host(`outline.swarm.localhost`)"
+        - "traefik.http.routers.outline.entrypoints=websecure"
+        - "traefik.http.services.outline.loadbalancer.server.port=3000"
+
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: outline
+      POSTGRES_DB: outline
+      POSTGRES_PASSWORD_FILE: /run/secrets/outline_db_password
+    secrets:
+      - outline_db_password
+    volumes:
+      - outline_db:/var/lib/postgresql/data
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager # its volume stays on the same node
+
+  redis:
+    image: redis:7-alpine
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+
+# ... (web network, volumes, swarm_ca config and the 5 external secrets)
+```
+
+- Toutes les valeurs sensibles passent par des variables `_FILE` : `docker service inspect` ne montre que des chemins, jamais les valeurs.
+- Outline est écrit en Node.js : c'est `NODE_EXTRA_CA_CERTS` qui lui fait accepter notre CA, comme `SSL_CERT_FILE` pour Dozzle.
+- `FORCE_HTTPS: "false"` : Outline reçoit du HTTP de Traefik, qui s'occupe déjà du HTTPS.
+- Les 3 services sont placés sur le manager, pour que leurs volumes restent sur le même nœud.
+
+```bash
+docker compose cp outline.stack.yml manager:/home/manager/
+docker compose exec manager docker stack deploy -c /home/manager/outline.stack.yml outline
+docker compose exec manager docker stack services outline
+docker compose exec manager docker service logs --raw outline_outline 2>&1 | tail -4
+```
+
+<p align="center">
+  <img src="screenshots/td4-33-outline-deploy.png" alt="Déploiement d'Outline">
+</p>
+
+Les 3 services sont à `1/1`, et Outline écoute sur `https://outline.swarm.localhost`.
+
+**Dans le navigateur**, https://outline.swarm.localhost envoie directement sur Authelia, puisque c'est la seule méthode de connexion d'Outline :
+
+<p align="center">
+  <img src="screenshots/td4-34-outline-redirect.png" alt="Outline renvoie sur la page de connexion d'Authelia">
+</p>
+
+Après la connexion, Authelia demande le consentement pour **Outline**, avec le scope `offline_access` en plus :
+
+<p align="center">
+  <img src="screenshots/td4-35-outline-consent.png" alt="Demande de consentement d'Authelia pour Outline">
+</p>
+
+<p align="center">
+  <img src="screenshots/td4-36-outline-home.png" alt="Accueil d'Outline, connecté en tant qu'Ahmed">
+</p>
+
+On arrive sur Outline, connecté en tant qu'**Ahmed**. À cette première connexion, Outline a créé l'espace de travail et sa collection « Welcome ».
+
+### Bilan : les secrets et les configs du cluster
+
+| Nom | Type | Utilisé par | Créé depuis |
+|---|---|---|---|
+| `swarm_localhost_key` | secret | Traefik | ligne de commande |
+| `swarm_localhost_crt`, `traefik_tls` | config | Traefik | ligne de commande |
+| `swarm_ca` | config | Dozzle, Outline | ligne de commande |
+| `dozzle_users` | secret | Dozzle (question 1.1) | Portainer |
+| `dozzle_oidc_secret` | secret | Dozzle (question 1.2) | ligne de commande |
+| `authelia_users` | secret | Authelia (le compte) | ligne de commande |
+| `authelia_jwt_secret`, `authelia_session_secret`, `authelia_storage_key`, `authelia_oidc_hmac`, `authelia_oidc_key` | secret | Authelia | ligne de commande |
+| `authelia_config` | config | Authelia | ligne de commande, recréée 2 fois |
+| `outline_db_password` | secret | PostgreSQL d'Outline | ligne de commande |
+| `outline_database_url`, `outline_secret_key`, `outline_utils_secret`, `outline_oidc_secret` | secret | Outline | ligne de commande |
+
+- Toutes ces informations sont stockées par Swarm, et chaque conteneur les reçoit sous forme de fichiers, quel que soit le nœud où il tourne.
+- Les configs se relisent (`config inspect --pretty`), les secrets jamais.
+- Ni l'un ni l'autre ne se modifie : pour changer une config, on la supprime puis on la recrée, après avoir retiré le service qui l'utilise.

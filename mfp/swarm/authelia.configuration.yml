@@ -68,3 +68,24 @@ identity_providers:
           - 'email'
           - 'dozzle_roles'
         token_endpoint_auth_method: 'client_secret_basic'
+
+      # Bonus: Outline (TD4 ex. 1.3)
+      - client_id: 'outline'
+        client_name: 'Outline'
+        # pbkdf2 digest of the secret stored in the swarm secret outline_oidc_secret
+        client_secret: '$pbkdf2-sha512$310000$wCiCZEIFdWY54dzdbN8SBQ$0Amgl90xzgb7n7V7CaYnJXa1A.l.kXpiReHdVhUukmDlbS27r1pejoF6AYE/oc3/FGQTa74loB8idUZSFWcBLw'
+        public: false
+        authorization_policy: 'one_factor'
+        redirect_uris:
+          - 'https://outline.swarm.localhost/auth/oidc.callback'
+        scopes:
+          - 'openid'
+          - 'offline_access' # Outline uses a refresh token
+          - 'profile'
+          - 'email'
+        response_types:
+          - 'code'
+        grant_types:
+          - 'authorization_code'
+          - 'refresh_token'
+        token_endpoint_auth_method: 'client_secret_post'
