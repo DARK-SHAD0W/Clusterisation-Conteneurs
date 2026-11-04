@@ -201,15 +201,7 @@ J'ai mis cette ligne sur les trois services.
 restart: unless-stopped
 \end{fichier}
 
-\begin{commandes}
-  \cmd{docker compose exec server pkill -f "node dist/index.js"}
-  \cmd{docker inspect mfp-server-1 --format 'status=\{\{.State.Status\}\} restarts=\{\{.RestartCount\}\}'}
-  \cmd{docker compose stop server}
-  \cmd{docker inspect mfp-server-1 --format 'status=\{\{.State.Status\}\} restarts=\{\{.RestartCount\}\}'}
-  \cmd{docker compose start server}
-\end{commandes}
-
-Après le \code{pkill}, le premier \code{inspect} affiche \code{status=running restarts=1}, donc le serveur a été relancé. Après \code{docker compose stop}, le second affiche \code{status=exited restarts=1} : il reste arrêté.
+Pour vérifier, j'ai arrêté le serveur moi-même de deux façons. Quand j'ai tué son processus, Docker l'a relancé tout seul, mais après un arrêt manuel du conteneur, il est resté arrêté.
 
 % ---------------------------------------------------------------- 2.3
 \subsection{Optimiser les images avec les build stages}

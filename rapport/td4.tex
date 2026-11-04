@@ -41,33 +41,50 @@ Le manager et les 3 workers sont \code{Ready}. Le réseau \code{web} et les stac
 
 \subsection{Créer le certificat}
 
-J'ai créé une CA locale, ajoutée aux autorités de confiance de Windows avec \code{certutil}, et un certificat \code{*.swarm.localhost} signé par elle.
+Sur mon PC, dans \code{mfp/swarm} :
 
 \begin{commandes}
-  \cmd{mkdir -p certs}
-  \cmd{openssl req -x509 -newkey rsa:2048 -noenc -days 3650 -subj "/CN=Swarm Local CA" -keyout certs/ca.key -out certs/ca.crt}
-  \cmd{openssl req -newkey rsa:2048 -noenc -subj "/CN=*.swarm.localhost" -keyout certs/swarm.localhost.key -out certs/swarm.localhost.csr}
-  \cmd{openssl x509 -req -in certs/swarm.localhost.csr -CA certs/ca.crt -CAkey certs/ca.key -CAcreateserial -days 365 -extfile <(printf "subjectAltName=DNS:*.swarm.localhost,DNS:swarm.localhost") -out certs/swarm.localhost.crt}
-  \cmd{ls certs}
-  \cmd{openssl verify -CAfile certs/ca.crt certs/swarm.localhost.crt}
-  \cmd{certutil.exe -user -addstore Root "\$(wslpath -w certs/ca.crt)"}
+  \cmd{mkdir certs}
+  \cmd{cd certs}
+  \cmd{openssl req -x509 -newkey rsa:2048 -noenc -subj "/CN=Swarm Local CA" -keyout ca.key -out ca.crt}
+  \cmd{openssl req -newkey rsa:2048 -noenc -subj "/CN=*.swarm.localhost" -keyout swarm.localhost.key -out swarm.localhost.csr}
 \end{commandes}
 
-\capture{td4-03-certs.png}{\code{openssl verify} répond \code{OK} : le certificat est signé par ma CA.}
+Le navigateur refuse un certificat dont le nom n'est pas dans \code{subjectAltName}. Je l'ai mis dans un fichier \code{certs/san.ext}.
+
+\begin{fichier}[text]
+subjectAltName=DNS:*.swarm.localhost
+\end{fichier}
+
+\begin{commandes}
+  \cmd{openssl x509 -req -in swarm.localhost.csr -CA ca.crt -CAkey ca.key -extfile san.ext -out swarm.localhost.crt}
+  \cmd{openssl verify -CAfile ca.crt swarm.localhost.crt}
+  \cmd{certutil.exe -user -addstore Root ca.crt}
+  \cmd{cd ..}
+\end{commandes}
+
+\code{openssl verify} répond \code{swarm.localhost.crt: OK}, et \code{certutil} ajoute ma CA aux autorités de confiance de Windows.
 
 \subsection{Mettre le certificat dans un secret et des configs}
 
-La clé privée va dans un secret. Le certificat et \code{traefik-tls.yml}, qui indique à Traefik le certificat à utiliser, vont dans des configs.
+Sur mon PC, j'ai copié les fichiers dans le manager, puis ouvert un shell dedans.
 
 \begin{commandes}
-  \cmd{docker compose exec manager docker network create --driver overlay web}
-  \cmd{docker compose exec -T manager docker config create swarm\_localhost\_crt - < certs/swarm.localhost.crt}
-  \cmd{docker compose exec -T manager docker config create traefik\_tls - < traefik-tls.yml}
-  \cmd{docker compose exec -T manager docker secret create swarm\_localhost\_key - < certs/swarm.localhost.key}
-  \cmd{docker compose exec manager docker config ls}
-  \cmd{docker compose exec manager docker secret ls}
-  \cmd{docker compose exec manager docker config inspect --pretty traefik\_tls}
-  \cmd{docker compose exec manager docker secret inspect --pretty swarm\_localhost\_key}
+  \cmd{docker compose cp certs manager:/home/manager/}
+  \cmd{docker compose cp traefik-tls.yml manager:/home/manager/}
+  \cmd{docker compose exec manager ash}
+\end{commandes}
+
+Dans le manager, la clé privée va dans un secret, le certificat et \code{traefik-tls.yml} dans des configs. J'ai aussi recréé le réseau \code{web}.
+
+\begin{commandes}
+  \cmd{cd /home/manager}
+  \cmd{docker network create --driver overlay web}
+  \cmd{docker secret create swarm\_localhost\_key certs/swarm.localhost.key}
+  \cmd{docker config create swarm\_localhost\_crt certs/swarm.localhost.crt}
+  \cmd{docker config create traefik\_tls traefik-tls.yml}
+  \cmd{docker config inspect --pretty traefik\_tls}
+  \cmd{docker secret inspect --pretty swarm\_localhost\_key}
 \end{commandes}
 
 \capture{td4-06-inspect-config-secret.png}{La config affiche son contenu, le secret seulement son nom et ses dates.}
@@ -94,23 +111,34 @@ Dans \code{traefik-https.stack.yml}, j'ai ajouté l'entrypoint \code{websecure} 
       - "--entrypoints.websecure.http.tls=true"
 \end{fichier}
 
+Sur mon PC :
+
 \begin{commandes}
   \cmd{docker compose cp traefik-https.stack.yml manager:/home/manager/}
-  \cmd{docker compose exec manager docker stack deploy -c /home/manager/traefik-https.stack.yml traefik}
-  \cmd{docker compose exec manager docker service ls}
-  \cmd{curl -s --cacert certs/ca.crt https://whoami.swarm.localhost | head -4}
-  \cmd{curl -sI http://dozzle.swarm.localhost | head -2}
+\end{commandes}
+
+Dans le manager :
+
+\begin{commandes}
+  \cmd{docker stack deploy -c traefik-https.stack.yml traefik}
+  \cmd{docker service ls}
+\end{commandes}
+
+Sur mon PC :
+
+\begin{commandes}
+  \cmd{curl --cacert certs/ca.crt https://whoami.swarm.localhost}
+  \cmd{curl -I http://dozzle.swarm.localhost}
 \end{commandes}
 
 \capture{td4-08-https-test.png}{\code{whoami} répond en HTTPS, et \code{http://dozzle.swarm.localhost} renvoie une redirection 307 vers \code{https://}.}
 
 \subsection{Relancer Portainer et ajouter les adresses}
 
+La stack de Portainer était encore dans \code{/home/manager} depuis le TD~3. Dans le manager :
+
 \begin{commandes}
-  \cmd{docker compose exec manager docker volume ls}
-  \cmd{docker compose cp portainer-agent-stack.traefik.yml manager:/home/manager/}
-  \cmd{docker compose exec manager docker stack deploy -c /home/manager/portainer-agent-stack.traefik.yml portainer}
-  \cmd{docker compose exec manager docker service ls}
+  \cmd{docker stack deploy -c portainer-agent-stack.traefik.yml portainer}
 \end{commandes}
 
 Portainer a retrouvé son compte \code{admin}, resté dans son volume sur le manager. J'ai ajouté les trois adresses du TD au fichier hosts.
@@ -128,15 +156,19 @@ Portainer a retrouvé son compte \code{admin}, resté dans son volume sur le man
 
 \subsubsection{Générer users.yml}
 
-J'ai utilisé la commande de la documentation de Dozzle.
+Sur mon PC, avec la commande de la documentation de Dozzle :
 
 \begin{commandes}
   \cmd{docker run --rm amir20/dozzle generate admin --password dozzle-admin-2026 --name "Admin"}
 \end{commandes}
 
+Elle affiche le contenu de \code{users.yml}, que j'ai copié.
+
 \subsubsection{Créer le secret dans Portainer}
 
-\capture{td4-13-portainer-secret-form.png}{Création du secret \code{dozzle_users} dans Portainer, avec le contenu généré.}
+Dans Portainer, \og Secrets\fg{} puis \og Add secret\fg{} : nom \code{dozzle_users}, et le contenu copié juste avant.
+
+\capture{td4-13-portainer-secret-form.png}{Création du secret \code{dozzle_users} dans Portainer.}
 
 \subsubsection{Déployer Dozzle}
 
@@ -150,10 +182,17 @@ J'ai utilisé la commande de la documentation de Dozzle.
         target: /data/users.yml
 \end{fichier}
 
+Sur mon PC :
+
 \begin{commandes}
   \cmd{docker compose cp dozzle.stack.yml manager:/home/manager/}
-  \cmd{docker compose exec manager docker stack deploy -c /home/manager/dozzle.stack.yml dozzle}
-  \cmd{docker compose exec manager docker service ps dozzle\_dozzle}
+\end{commandes}
+
+Dans le manager :
+
+\begin{commandes}
+  \cmd{docker stack deploy -c dozzle.stack.yml dozzle}
+  \cmd{docker stack services dozzle}
 \end{commandes}
 
 \capture{td4-17-dozzle-home.png}{Connecté à \code{dozzle.swarm.localhost} avec le compte \code{admin}, Dozzle voit le manager et les 3 nœuds.}
@@ -162,38 +201,51 @@ J'ai utilisé la commande de la documentation de Dozzle.
 
 \subsubsection{Créer les clés d'Authelia}
 
-J'ai envoyé les clés directement d'\code{openssl} dans des secrets, sans fichier sur le disque.
+Dans le manager, chaque clé sort d'\code{openssl} et part directement dans un secret. La config \code{swarm_ca} (ma CA) servira à Dozzle et Outline.
 
 \begin{commandes}
-  \cmd{for s in authelia\_jwt\_secret authelia\_session\_secret authelia\_storage\_key authelia\_oidc\_hmac; do openssl rand -hex 32 | docker compose exec -T manager docker secret create \$s -; done}
-  \cmd{openssl genrsa 2048 | docker compose exec -T manager docker secret create authelia\_oidc\_key -}
-  \cmd{docker compose exec -T manager docker config create swarm\_ca - < certs/ca.crt}
-  \cmd{docker compose exec manager docker secret ls}
+  \cmd{openssl rand -hex 32 | docker secret create authelia\_jwt\_secret -}
+  \cmd{openssl rand -hex 32 | docker secret create authelia\_session\_secret -}
+  \cmd{openssl rand -hex 32 | docker secret create authelia\_storage\_key -}
+  \cmd{openssl rand -hex 32 | docker secret create authelia\_oidc\_hmac -}
+  \cmd{openssl genrsa 2048 | docker secret create authelia\_oidc\_key -}
+  \cmd{docker config create swarm\_ca certs/ca.crt}
 \end{commandes}
 
 \subsubsection{Créer le compte dans un secret}
 
+Sur mon PC :
+
 \begin{commandes}
-  \cmd{docker run --rm authelia/authelia:4.39 authelia crypto hash generate argon2 --password 'ahmed-authelia-2026'}
-  \cmd{cat secrets/users\_database.yml}
-  \cmd{docker compose exec -T manager docker secret create authelia\_users - < secrets/users\_database.yml}
+  \cmd{docker run --rm -it authelia/authelia:4.39 authelia crypto hash generate argon2}
 \end{commandes}
 
-\capture{td4-19-authelia-users.png}{Le compte \code{ahmed}, du groupe \code{admins}, avec son hash argon2, devient le secret \code{authelia_users}.}
+La commande demande le mot de passe et affiche son hash (ligne \code{Digest}). Je l'ai collé dans \code{password} du fichier \code{secrets/users_database.yml}.
+
+\begin{commandes}
+  \cmd{cat secrets/users\_database.yml}
+  \cmd{docker compose cp secrets/users\_database.yml manager:/home/manager/}
+\end{commandes}
+
+\capture{td4-19-authelia-users.png}{Le compte \code{ahmed}, du groupe \code{admins}, avec son hash argon2.}
+
+Dans le manager :
+
+\begin{commandes}
+  \cmd{docker secret create authelia\_users users\_database.yml}
+\end{commandes}
 
 \subsubsection{Créer le client OIDC de Dozzle}
 
-Le client secret en clair va dans un secret pour Dozzle, et son empreinte pbkdf2 dans la configuration d'Authelia.
+Sur mon PC :
 
 \begin{commandes}
-  \cmd{openssl rand -hex 36 | tr -d "\textbackslash{}n" > secrets/dozzle\_oidc\_secret}
-  \cmd{docker run --rm authelia/authelia:4.39 authelia crypto hash generate pbkdf2 --variant sha512 --password "\$(cat secrets/dozzle\_oidc\_secret)"}
-  \cmd{docker compose exec -T manager docker secret create dozzle\_oidc\_secret - < secrets/dozzle\_oidc\_secret}
+  \cmd{docker run --rm authelia/authelia:4.39 authelia crypto hash generate pbkdf2 --random}
 \end{commandes}
 
-\subsubsection{Déployer Authelia}
+Elle affiche un mot de passe aléatoire (\code{Random Password}) et son empreinte (\code{Digest}). J'ai mis le mot de passe dans un secret \code{dozzle_oidc_secret}, créé dans Portainer comme \code{dozzle_users}, et l'empreinte dans \code{client_secret} du client \code{dozzle} d'\code{authelia.configuration.yml}.
 
-La configuration, \code{authelia.configuration.yml}, va dans une config. L'empreinte du client secret est dans \code{client_secret}.
+\subsubsection{Déployer Authelia}
 
 \begin{fichier}
 session:
@@ -225,15 +277,22 @@ Dans \code{authelia.stack.yml}, les clés sont lues avec les variables \code{AUT
       # ...
 \end{fichier}
 
+Sur mon PC :
+
 \begin{commandes}
-  \cmd{docker compose exec -T manager docker config create authelia\_config - < authelia.configuration.yml}
+  \cmd{docker compose cp authelia.configuration.yml manager:/home/manager/}
   \cmd{docker compose cp authelia.stack.yml manager:/home/manager/}
-  \cmd{docker compose exec manager docker stack deploy -c /home/manager/authelia.stack.yml authelia}
-  \cmd{docker compose exec manager docker service ls --filter name=authelia}
-  \cmd{docker compose exec manager docker service logs --raw authelia\_authelia 2>\&1 | tail -4}
 \end{commandes}
 
-\capture{td4-21-authelia-deploy.png}{\code{authelia_authelia} est en \code{1/1}, et ses logs se terminent par \code{Startup complete}.}
+Dans le manager :
+
+\begin{commandes}
+  \cmd{docker config create authelia\_config authelia.configuration.yml}
+  \cmd{docker stack deploy -c authelia.stack.yml authelia}
+  \cmd{docker stack services authelia}
+\end{commandes}
+
+\capture{td4-21-authelia-deploy.png}{\code{authelia_authelia} est en \code{1/1}.}
 
 \subsubsection{Brancher Dozzle sur Authelia}
 
@@ -252,14 +311,17 @@ Dozzle joint \code{authelia.swarm.localhost} par l'alias de Traefik, et la confi
         target: /certs/ca.crt
 \end{fichier}
 
+Sur mon PC :
+
 \begin{commandes}
   \cmd{docker compose cp dozzle.oidc.stack.yml manager:/home/manager/}
-  \cmd{docker compose exec manager docker stack deploy -c /home/manager/dozzle.oidc.stack.yml dozzle}
-  \cmd{docker compose exec manager docker service ps dozzle\_dozzle --filter desired-state=running}
-  \cmd{docker compose exec manager docker service logs --raw --since 2m dozzle\_dozzle 2>\&1 | grep -iE 'oidc|auth|error|fatal' | head -8}
 \end{commandes}
 
-\capture{td4-24-dozzle-oidc-deploy.png}{Une tâche Dozzle par nœud, et les logs indiquent l'authentification OpenID Connect avec Authelia comme émetteur.}
+Dans le manager :
+
+\begin{commandes}
+  \cmd{docker stack deploy -c dozzle.oidc.stack.yml dozzle}
+\end{commandes}
 
 \probleme{au retour d'Authelia, Dozzle refusait la connexion avec \code{no roles claim found in the ID token}. J'ai ajouté à Authelia un attribut \code{dozzle_roles}, calculé à partir des groupes, et Dozzle le demande avec \code{DOZZLE_AUTH_OIDC_SCOPES: dozzle_roles}.}
 
@@ -275,23 +337,27 @@ definitions:
         # ...
 \end{fichier}
 
-Une config ne se modifie pas, il faut la supprimer puis la recréer.
+Une config ne se modifie pas, il faut la supprimer puis la recréer. Sur mon PC :
 
 \begin{commandes}
-  \cmd{docker compose exec manager docker config rm authelia\_config}
+  \cmd{docker compose cp authelia.configuration.yml manager:/home/manager/}
+  \cmd{docker compose cp dozzle.oidc.stack.yml manager:/home/manager/}
+\end{commandes}
+
+Dans le manager :
+
+\begin{commandes}
+  \cmd{docker config rm authelia\_config}
 \end{commandes}
 
 \probleme{la suppression a été refusée, parce que la config était encore utilisée par Authelia. J'ai d'abord retiré la stack \code{authelia}, sans toucher à son volume.}
 
 \begin{commandes}
-  \cmd{docker compose exec manager docker stack rm authelia}
-  \cmd{docker compose exec manager docker config rm authelia\_config}
-  \cmd{docker compose exec -T manager docker config create authelia\_config - < authelia.configuration.yml}
-  \cmd{docker compose exec manager docker stack deploy -c /home/manager/authelia.stack.yml authelia}
-  \cmd{docker compose exec manager docker service ls --filter name=authelia}
-  \cmd{docker compose cp dozzle.oidc.stack.yml manager:/home/manager/}
-  \cmd{docker compose exec manager docker stack deploy -c /home/manager/dozzle.oidc.stack.yml dozzle}
-  \cmd{docker compose exec manager docker service ls --filter name=dozzle}
+  \cmd{docker stack rm authelia}
+  \cmd{docker config rm authelia\_config}
+  \cmd{docker config create authelia\_config authelia.configuration.yml}
+  \cmd{docker stack deploy -c authelia.stack.yml authelia}
+  \cmd{docker stack deploy -c dozzle.oidc.stack.yml dozzle}
 \end{commandes}
 
 \subsubsection{Se connecter à Dozzle par Authelia}
@@ -304,17 +370,23 @@ Une config ne se modifie pas, il faut la supprimer puis la recréer.
 
 \subsubsection{Créer les secrets d'Outline}
 
-Le mot de passe PostgreSQL, tiré une fois dans \code{PW}, sert à deux secrets.
+Dans le manager :
 
 \begin{commandes}
-  \cmd{PW=\$(openssl rand -hex 24)}
-  \cmd{printf \%s "\$PW" | docker compose exec -T manager docker secret create outline\_db\_password -}
-  \cmd{printf \%s "postgres://outline:\$PW@postgres:5432/outline" | docker compose exec -T manager docker secret create outline\_database\_url -}
-  \cmd{for s in outline\_secret\_key outline\_utils\_secret; do openssl rand -hex 32 | tr -d "\textbackslash{}n" | docker compose exec -T manager docker secret create \$s -; done}
-  \cmd{openssl rand -hex 36 | tr -d "\textbackslash{}n" > secrets/outline\_oidc\_secret}
-  \cmd{docker run --rm authelia/authelia:4.39 authelia crypto hash generate pbkdf2 --variant sha512 --password "\$(cat secrets/outline\_oidc\_secret)"}
-  \cmd{docker compose exec -T manager docker secret create outline\_oidc\_secret - < secrets/outline\_oidc\_secret}
+  \cmd{openssl rand -hex 32 | docker secret create outline\_secret\_key -}
+  \cmd{openssl rand -hex 32 | docker secret create outline\_utils\_secret -}
+  \cmd{openssl rand -hex 24}
 \end{commandes}
+
+Le dernier \code{openssl} affiche le mot de passe de PostgreSQL. Je l'ai collé dans deux secrets créés dans Portainer : \code{outline_db_password}, avec le mot de passe seul, et \code{outline_database_url}, avec \code{postgres://outline:<mot de passe>@postgres:5432/outline}.
+
+Pour le client OIDC, sur mon PC :
+
+\begin{commandes}
+  \cmd{docker run --rm authelia/authelia:4.39 authelia crypto hash generate pbkdf2 --random}
+\end{commandes}
+
+Comme pour Dozzle, le mot de passe va dans un secret \code{outline_oidc_secret} créé dans Portainer, et l'empreinte dans \code{client_secret} du client \code{outline}.
 
 \subsubsection{Ajouter le client dans Authelia}
 
@@ -326,17 +398,22 @@ Le mot de passe PostgreSQL, tiré une fois dans \code{PW}, sert à deux secrets.
           - 'https://outline.swarm.localhost/auth/oidc.callback'
 \end{fichier}
 
-Comme demandé, j'ai supprimé puis recréé la config, en retirant la stack avant cette fois.
+Comme demandé, j'ai supprimé puis recréé la config, en retirant la stack avant cette fois. Sur mon PC :
 
 \begin{commandes}
-  \cmd{docker compose exec manager docker stack rm authelia}
-  \cmd{docker compose exec manager docker config rm authelia\_config}
-  \cmd{docker compose exec -T manager docker config create authelia\_config - < authelia.configuration.yml}
-  \cmd{docker compose exec manager docker stack deploy -c /home/manager/authelia.stack.yml authelia}
-  \cmd{docker compose exec manager docker service ls --filter name=authelia}
+  \cmd{docker compose cp authelia.configuration.yml manager:/home/manager/}
 \end{commandes}
 
-\capture{td4-32-authelia-config-outline.png}{\code{config rm} passe du premier coup, et \code{authelia_authelia} repart en \code{1/1}.}
+Dans le manager :
+
+\begin{commandes}
+  \cmd{docker stack rm authelia}
+  \cmd{docker config rm authelia\_config}
+  \cmd{docker config create authelia\_config authelia.configuration.yml}
+  \cmd{docker stack deploy -c authelia.stack.yml authelia}
+\end{commandes}
+
+Cette fois, \code{config rm} est passé du premier coup.
 
 \subsubsection{Déployer Outline}
 
@@ -345,24 +422,28 @@ Comme demandé, j'ai supprimé puis recréé la config, en retirant la stack ava
       SECRET_KEY_FILE: /run/secrets/outline_secret_key
       UTILS_SECRET_FILE: /run/secrets/outline_utils_secret
       DATABASE_URL_FILE: /run/secrets/outline_database_url
-      # ...
       OIDC_CLIENT_ID: outline
       OIDC_CLIENT_SECRET_FILE: /run/secrets/outline_oidc_secret
       OIDC_AUTH_URI: https://authelia.swarm.localhost/api/oidc/authorization
       OIDC_TOKEN_URI: https://authelia.swarm.localhost/api/oidc/token
       OIDC_USERINFO_URI: https://authelia.swarm.localhost/api/oidc/userinfo
-      # ...
       NODE_EXTRA_CA_CERTS: /certs/ca.crt
 \end{fichier}
 
+Sur mon PC :
+
 \begin{commandes}
   \cmd{docker compose cp outline.stack.yml manager:/home/manager/}
-  \cmd{docker compose exec manager docker stack deploy -c /home/manager/outline.stack.yml outline}
-  \cmd{docker compose exec manager docker stack services outline}
-  \cmd{docker compose exec manager docker service logs --raw outline\_outline 2>\&1 | tail -4}
 \end{commandes}
 
-\capture{td4-33-outline-deploy.png}{\code{outline}, \code{postgres} et \code{redis} sont en \code{1/1}, et Outline écoute sur \code{https://outline.swarm.localhost}.}
+Dans le manager :
+
+\begin{commandes}
+  \cmd{docker stack deploy -c outline.stack.yml outline}
+  \cmd{docker stack services outline}
+\end{commandes}
+
+\capture{td4-33-outline-deploy.png}{\code{outline}, \code{postgres} et \code{redis} sont en \code{1/1}.}
 
 \subsubsection{Se connecter à Outline par Authelia}
 

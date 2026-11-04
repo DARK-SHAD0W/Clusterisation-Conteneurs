@@ -30,6 +30,9 @@
 \setlength{\parskip}{4pt}
 % noms de fichiers longs en police fixe : on étire les espaces plutôt que de déborder
 \setlength{\emergencystretch}{3em}
+% jamais une ligne seule d'un paragraphe en haut ou en bas de page
+\widowpenalty=10000
+\clubpenalty=10000
 \setlist{itemsep=1pt,topsep=2pt}
 
 % ---------------------------------------------------------------- couleurs : noir et gris uniquement
@@ -74,7 +77,10 @@
 % saut de page se fait avant la cible du lien (ancre). Sans cela, un titre renvoyé
 % en haut de page laissait son ancre en bas de la page précédente, et le sommaire
 % menait une page trop tôt.
-\newcommand{\rapport@section}[1]{\Needspace{7\baselineskip}\section{#1}}
+% 16 lignes réservées : un exercice est souvent suivi d'un titre de question,
+% d'une phrase et d'un bloc de code insécables ; s'ils ne tiennent pas, tout
+% l'exercice passe à la page suivante, ancre comprise.
+\newcommand{\rapport@section}[1]{\Needspace{16\baselineskip}\addvspace{18pt}\section{#1}}
 \newcommand{\exercice}[2]{\setcounter{section}{\numexpr#1-1\relax}\rapport@section{Exercice #1 : #2}}
 \newcommand{\prerequis}[1]{\setcounter{section}{-1}\rapport@section{Prérequis : #1}}
 
@@ -82,11 +88,19 @@
 \titleformat{\chapter}[block]{\normalfont\huge\bfseries\color{accent}}{}{0pt}{}[\vspace{4pt}{\color{accent}\titlerule[1pt]}]
 \titlespacing*{\chapter}{0pt}{-10pt}{16pt}
 \titleformat{\section}{\normalfont\Large\bfseries\color{accent}}{}{0pt}{}
-\titlespacing*{\section}{0pt}{18pt}{6pt}
+\titlespacing*{\section}{0pt}{0pt}{6pt}
 \titleformat{\subsection}{\normalfont\large\bfseries}{\textcolor{accent}{\thesubsection}}{0.7em}{}
 \titlespacing*{\subsection}{0pt}{14pt}{4pt}
 \titleformat{\subsubsection}{\normalfont\normalsize\bfseries}{\textcolor{accent}{\thesubsubsection}}{0.6em}{}
 \titlespacing*{\subsubsection}{0pt}{10pt}{2pt}
+% Un titre ne reste jamais seul en bas de page : s'il ne reste pas la place pour
+% le titre et quelques lignes, il passe à la page suivante (avant son ancre).
+% Juste après un autre titre (\if@nobreak), rien à faire : le titre du dessus a
+% déjà réservé la place.
+\RequirePackage{etoolbox}
+\newcommand{\rapport@garde}[1]{\if@nobreak\else\Needspace{#1}\fi}
+\preto\subsection{\rapport@garde{6\baselineskip}}
+\preto\subsubsection{\rapport@garde{5\baselineskip}}
 
 % ---------------------------------------------------------------- sommaire
 \titlecontents{chapter}[0pt]{\addvspace{9pt}\bfseries}{}{}{\hfill\contentspage}
@@ -119,13 +133,28 @@
 % ---------------------------------------------------------------- captures
 % \capture{fichier.png}{Une ou deux phrases.}
 % Toutes les captures ont la même règle : pleine largeur, centrées, sans dépasser
-% 58 % de la hauteur de page. L'argument optionnel des anciennes versions est ignoré.
+% 58 % de la hauteur de page. Si une capture ne tient pas de peu dans la place
+% qui reste en bas de page, elle est réduite (jusqu'à 75 % de sa hauteur) au lieu
+% de partir à la page suivante en laissant un grand blanc.
 \captionsetup{font=small,labelfont=bf,labelsep=period,justification=centering,skip=5pt,hypcap=false}
+\newsavebox{\rapport@img}
+\newlength{\rapport@reste}
 \newcommand{\capture}[3][]{%
-  \par\medskip
+  % pénalité infinie : pas de coupure entre la capture et ce qui l'annonce, et
+  % \pagetotal est à jour pour mesurer la place qui reste
+  \par\penalty\@M\medskip
+  \sbox{\rapport@img}{\includegraphics[width=\dimexpr\linewidth-0.8pt\relax,height=0.58\textheight,keepaspectratio]{#2}}%
+  \ifdim\pagegoal<\maxdimen
+    \setlength{\rapport@reste}{\dimexpr\pagegoal-\pagetotal-3\baselineskip\relax}%
+    \ifdim\ht\rapport@img>\rapport@reste
+      \ifdim\rapport@reste>0.7\ht\rapport@img
+        \sbox{\rapport@img}{\includegraphics[width=\dimexpr\linewidth-0.8pt\relax,height=\rapport@reste,keepaspectratio]{#2}}%
+      \fi
+    \fi
+  \fi
   \begin{minipage}{\linewidth}\centering
     {\setlength{\fboxsep}{0pt}\setlength{\fboxrule}{0.4pt}%
-     \fcolorbox{black!25}{white}{\includegraphics[width=\dimexpr\linewidth-0.8pt\relax,height=0.58\textheight,keepaspectratio]{#2}}}%
+     \fcolorbox{black!25}{white}{\usebox{\rapport@img}}}%
     \captionof{figure}{#3}
   \end{minipage}\par\medskip}
 
@@ -138,7 +167,7 @@
 % Caractères spéciaux échappés (\$, \#, \%, \_, \{, \}, \textbackslash{}) ;
 % une commande trop longue continue sur la ligne suivante, comme du texte.
 \newenvironment{commandes}%
-  {\begin{itemize}[nosep, topsep=3pt, partopsep=0pt, after=\vspace{2pt}]\raggedright}%
+  {\begin{itemize}[nosep, topsep=3pt, partopsep=0pt, beginpenalty=10000, after=\vspace{2pt}]\raggedright}%
   {\end{itemize}}
 \newcommand{\cmd}[1]{\item \texttt{#1}}
 
@@ -153,9 +182,11 @@
 \definecolor{vstexte}{HTML}{D4D4D4}
 \definecolor{vsbord}{HTML}{3C3C3C}
 \tcbset{
-  codebox/.style={enhanced, breakable, listing only, colback=vsfond, colupper=vstexte,
+  codebox/.style={enhanced, listing only, colback=vsfond, colupper=vstexte,
     colframe=vsbord, boxrule=0.5pt, arc=2pt, outer arc=2pt, left=8pt, right=6pt,
-    top=4pt, bottom=4pt, before skip=6pt, after skip=8pt},
+    top=4pt, bottom=4pt, after skip=8pt,
+    % le bloc reste collé à la phrase qui l'annonce
+    before={\par\nopagebreak\vspace{\dimexpr 6pt-\parskip\relax}\noindent}},
 }
 % « !O » : le langage optionnel doit suivre \begin{fichier} sur la même ligne
 % (sinon une première ligne commençant par [ serait lue comme argument)
