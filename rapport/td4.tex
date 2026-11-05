@@ -273,6 +273,7 @@ Dans \code{authelia.stack.yml}, les clés sont lues avec les variables \code{AUT
 
 \begin{fichier}
     environment:
+      X_AUTHELIA_CONFIG: /config/configuration.yml
       X_AUTHELIA_CONFIG_FILTERS: template
       # ...
       AUTHELIA_SESSION_SECRET_FILE: /run/secrets/authelia_session_secret
@@ -284,7 +285,7 @@ Dans \code{authelia.stack.yml}, les clés sont lues avec les variables \code{AUT
     secrets:
       - source: authelia_users
         target: /config/users_database.yml
-      - authelia_session_secret
+      - authelia_jwt_secret
       # ...
 \end{fichier}
 
@@ -430,14 +431,17 @@ Cette fois, \code{config rm} est passé du premier coup.
 
 \begin{fichier}
     environment:
+      # ...
       SECRET_KEY_FILE: /run/secrets/outline_secret_key
       UTILS_SECRET_FILE: /run/secrets/outline_utils_secret
       DATABASE_URL_FILE: /run/secrets/outline_database_url
+      # ...
       OIDC_CLIENT_ID: outline
       OIDC_CLIENT_SECRET_FILE: /run/secrets/outline_oidc_secret
       OIDC_AUTH_URI: https://authelia.swarm.localhost/api/oidc/authorization
       OIDC_TOKEN_URI: https://authelia.swarm.localhost/api/oidc/token
       OIDC_USERINFO_URI: https://authelia.swarm.localhost/api/oidc/userinfo
+      # ...
       NODE_EXTRA_CA_CERTS: /certs/ca.crt
 \end{fichier}
 

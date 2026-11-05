@@ -149,7 +149,7 @@ J'ai supprimé les conteneurs lancés à la main, qui occupaient encore les port
   \cmd{docker compose logs server}
 \end{commandes}
 
-\probleme{au premier essai, avec un simple \code{depends_on}, le serveur s'arrêtait sur \code{ECONNREFUSED}, parce qu'il démarrait avant PostgreSQL. J'ai ajouté le healthcheck de la question 2.1, puis j'ai relancé ces trois commandes.}
+\probleme{au premier essai, avec un simple \code{depends_on}, le serveur s'arrêtait sur \code{ECONNREFUSED}, parce qu'il démarrait avant PostgreSQL. J'ai ajouté le healthcheck de la question 2.1, puis j'ai relancé les trois commandes \code{docker compose}.}
 
 \capture{td1-09-compose-up.png}{\code{mfp-db-1} est \code{Healthy} avant le démarrage du serveur, et les 3 services sont \code{Up}.}
 
