@@ -10,6 +10,17 @@
   \item Pour tester Swarm, j'ai retenu DinD : un \code{compose.yml} avec 4 conteneurs DinD, 1 manager et 3 nœuds, qui jouent chacun une machine du cluster (exercice 2).
 \end{itemize}
 
+% ---------------------------------------------------------------- prérequis
+\prerequis{images sur un registry}
+
+Deux workflows GitHub Actions, \code{.github/workflows/build.server.yml} et \code{build.client.yml}, construisent les images du serveur et du client quand un push sur \code{main} modifie leur code, puis les publient sur GHCR.
+
+\begin{commandes}
+  \cmd{git push}
+\end{commandes}
+
+\capture{td2-00-ghcr-packages.png}{Les images \code{server} et \code{client} sont publiées sur GHCR.}
+
 % ---------------------------------------------------------------- exercice 2
 \exercice{2}{Création du cluster Docker Swarm}
 
@@ -51,7 +62,7 @@ services:
   \cmd{docker compose exec manager docker swarm init}
 \end{commandes}
 
-\capture{td2-03-swarm-init.png}{Le manager devient leader et affiche le token \code{SWMTKN-1-...} des workers.}
+\capture{td2-03-swarm-init.png}{Le conteneur \code{manager} devient le manager du swarm et affiche la commande \code{docker swarm join}, avec le token des workers.}
 
 \subsection{Faire rejoindre les nœuds comme workers}
 
@@ -191,4 +202,4 @@ J'en déduis que Swarm répartit les réplicas sur tous les nœuds, manager comp
   \cmd{docker compose exec manager docker service ps hello\_hello}
 \end{commandes}
 
-\capture{td2-12-stack-global.png}{En mode \code{global}, une tâche par nœud.}
+\capture{td2-12-stack-global.png}{En mode \code{global}, une tâche par nœud : \code{node1}, \code{node2}, \code{node3} et le manager.}

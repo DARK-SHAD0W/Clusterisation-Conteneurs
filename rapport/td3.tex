@@ -25,13 +25,12 @@ Seul le manager a été recréé, \code{docker node ls} affiche toujours le mana
 
 \subsection{Déployer la stack Traefik sur le manager}
 
-J'ai créé le réseau \code{web} en overlay, supprimé les services du TD~2, puis déployé la stack du cours (\code{traefik.compose.yml}).
+J'ai créé le réseau \code{web} en overlay, supprimé la stack \code{hello} du TD~2, puis déployé la stack du cours (\code{traefik.compose.yml}).
 
 \begin{commandes}
   \cmd{docker compose exec manager docker network create --driver overlay web}
   \cmd{docker compose exec manager docker network ls --filter name=web}
   \cmd{docker compose exec manager docker stack rm hello}
-  \cmd{docker compose exec manager docker service rm web}
   \cmd{docker compose cp traefik.compose.yml manager:/home/manager/}
   \cmd{docker compose exec manager docker stack deploy -c /home/manager/traefik.compose.yml traefik}
   \cmd{docker compose exec manager docker service ls}
@@ -67,12 +66,12 @@ J'ai ajouté ces lignes au fichier hosts de Windows (\texttt{C:\textbackslash Wi
 \begin{commandes}
   \cmd{docker login}
   \cmd{docker compose up -d}
-  \cmd{docker compose ps --format 'table \{\{.Name\}\}\textbackslash{}t\{\{.Image\}\}\textbackslash{}t\{\{.Status\}\}\textbackslash{}t\{\{.Ports\}\}'}
+  \cmd{docker compose ps}
   \cmd{curl -X POST -d vote=a http://localhost:8080/} (3 fois)
   \cmd{curl -X POST -d vote=b http://localhost:8080/} (2 fois)
 \end{commandes}
 
-\capture{td3-09-result-local.png}{Les 5 votes envoyés (3 Cats, 2 Dogs) apparaissent sur la page des résultats.}
+\capture[0.6]{td3-09-result-local.png}{Les 5 votes envoyés (3 Cats, 2 Dogs) apparaissent sur la page des résultats.}
 
 \begin{commandes}
   \cmd{docker compose down}
@@ -127,7 +126,7 @@ Dans une copie de la stack, \code{docker-stack.traefik.yml}, j'ai remplacé les 
   \cmd{curl -X POST -d vote=b http://vote.swarm.localhost/} (3 fois)
 \end{commandes}
 
-\capture{td3-14-result-traefik.png}{\code{result.swarm.localhost} affiche les 5 votes envoyés au cluster (2 Cats, 3 Dogs).}
+\capture[0.6]{td3-14-result-traefik.png}{\code{result.swarm.localhost} affiche les 5 votes envoyés au cluster (2 Cats, 3 Dogs).}
 
 % =====================================================================
 \exercice{3}{Déployer Portainer}
@@ -178,10 +177,10 @@ J'ai ajouté le réseau \code{web} et les labels Traefik (port 9000) au service 
 Au premier lancement, Portainer demande le setup token qu'il écrit dans ses logs.
 
 \begin{commandes}
-  \cmd{docker compose exec manager docker service logs --raw portainer\_portainer 2>\&1 | grep -A2 setup\_token=}
+  \cmd{docker compose exec manager docker service logs portainer\_portainer}
 \end{commandes}
 
-J'ai ensuite créé le compte \code{admin}.
+J'ai copié la valeur de \code{setup_token=} dans le formulaire, puis créé le compte \code{admin}.
 
 \capture{td3-22-portainer-stacks.png}{Je retrouve mes 3 stacks, en contrôle \og Limited\fg{} car créées en ligne de commande.}
 
@@ -209,6 +208,8 @@ J'ai envoyé le fichier \code{docker-stack.traefik.yml} de la question 2.3.
 \subsection{Vérifier l'accès depuis le navigateur}
 
 \code{vote.swarm.localhost} et \code{result.swarm.localhost} répondent de nouveau. Les résultats affichent \og No votes yet\fg{} : la base a été recréée sur \code{node2} avec un volume neuf, les anciens votes sont dans le volume de \code{node3}.
+
+\capture[0.6]{td3-28-result-portainer.png}{\code{result.swarm.localhost} après le redéploiement depuis Portainer.}
 
 \subsection{Déployer l'API de MFP}
 

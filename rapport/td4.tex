@@ -17,6 +17,7 @@ Authelia n'accepte qu'une adresse en \code{https://}, j'ai donc ajouté le port 
 \end{fichier}
 
 \begin{commandes}
+  \cmd{cd mfp/swarm}
   \cmd{docker compose up -d}
   \cmd{docker compose ps}
   \cmd{docker compose exec manager docker node ls}
@@ -91,13 +92,16 @@ Dans le manager, la clé privée va dans un secret, le certificat et \code{traef
 
 \subsection{Passer Traefik en HTTPS}
 
-Dans \code{traefik-https.stack.yml}, j'ai ajouté l'entrypoint \code{websecure} sur le port 443, les configs et le secret. L'alias \code{authelia.swarm.localhost} sert à la question 1.2.
+Dans \code{traefik-https.stack.yml}, j'ai ajouté l'entrypoint \code{websecure} sur le port 443, les configs, le secret, et le provider \code{file} qui lit \code{traefik-tls.yml}. L'alias \code{authelia.swarm.localhost} sert à la question 1.2.
 
 \begin{fichier}
     networks:
       web:
         aliases:
           - authelia.swarm.localhost
+    ports:
+      - 80:80
+      - 443:443
     configs:
       - source: traefik_tls
         target: /etc/traefik/tls.yml
@@ -107,9 +111,13 @@ Dans \code{traefik-https.stack.yml}, j'ai ajouté l'entrypoint \code{websecure} 
       - source: swarm_localhost_key
         target: swarm.localhost.key
     command:
+      # ...
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.websecure.http.tls=true"
+      - "--providers.file.filename=/etc/traefik/tls.yml"
 \end{fichier}
+
+Dans la même stack, \code{whoami} écoute aussi sur \code{websecure}, et un routeur \code{to-https} de priorité 1 renvoie vers \code{https://} les adresses qui n'ont pas de routeur en HTTP.
 
 Sur mon PC :
 
@@ -127,11 +135,11 @@ Dans le manager :
 Sur mon PC :
 
 \begin{commandes}
-  \cmd{curl --cacert certs/ca.crt https://whoami.swarm.localhost}
+  \cmd{curl -I --cacert certs/ca.crt https://whoami.swarm.localhost}
   \cmd{curl -I http://dozzle.swarm.localhost}
 \end{commandes}
 
-\capture{td4-08-https-test.png}{\code{whoami} répond en HTTPS, et \code{http://dozzle.swarm.localhost} renvoie une redirection 307 vers \code{https://}.}
+\capture{td4-08-https-test.png}{\code{whoami} répond en HTTPS (\code{HTTP/2 200}) avec mon certificat, et \code{http://dozzle.swarm.localhost}, sans routeur HTTP, est redirigé (307) vers \code{https://}.}
 
 \subsection{Relancer Portainer et ajouter les adresses}
 
@@ -255,15 +263,18 @@ session:
 # ...
     clients:
       - client_id: 'dozzle'
+        client_secret: '$pbkdf2-sha512$310000$...'
         # ...
         redirect_uris:
           - 'https://dozzle.swarm.localhost/api/auth/callback'
 \end{fichier}
 
-Dans \code{authelia.stack.yml}, les clés sont lues avec les variables \code{AUTHELIA_*_FILE}.
+Dans \code{authelia.stack.yml}, les clés sont lues avec les variables \code{AUTHELIA_*_FILE}, sauf la clé OIDC, que la configuration lit avec le filtre \code{template}.
 
 \begin{fichier}
     environment:
+      X_AUTHELIA_CONFIG_FILTERS: template
+      # ...
       AUTHELIA_SESSION_SECRET_FILE: /run/secrets/authelia_session_secret
       AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE: /run/secrets/authelia_storage_key
       # ...
@@ -362,7 +373,7 @@ Dans le manager :
 
 \subsubsection{Se connecter à Dozzle par Authelia}
 
-\capture{td4-29-authelia-consent.png}{Connecté sur \code{authelia.swarm.localhost} avec le compte \code{ahmed}.}
+\capture{td4-29-authelia-consent.png}{Connecté à Authelia avec le compte \code{ahmed}, qui demande mon accord pour Dozzle.}
 
 \capture{td4-30-dozzle-oidc-user.png}{De retour sur Dozzle, connecté en tant qu'Ahmed, le compte du secret \code{authelia_users}.}
 

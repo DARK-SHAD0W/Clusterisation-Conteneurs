@@ -73,21 +73,18 @@
   \setcounter{chapter}{\numexpr#1-1\relax}%
   \colorlet{accent}{td#1}%
   \chapter{TD #1 : #2}}
-% \Needspace avant chaque titre de section : s'il ne reste pas assez de place, le
-% saut de page se fait avant la cible du lien (ancre). Sans cela, un titre renvoyé
-% en haut de page laissait son ancre en bas de la page précédente, et le sommaire
-% menait une page trop tôt.
-% 16 lignes réservées : un exercice est souvent suivi d'un titre de question,
-% d'une phrase et d'un bloc de code insécables ; s'ils ne tiennent pas, tout
-% l'exercice passe à la page suivante, ancre comprise.
-\newcommand{\rapport@section}[1]{\Needspace{16\baselineskip}\addvspace{18pt}\section{#1}}
+% Un titre d'exercice ne commence pas dans les 8 dernières lignes d'une page.
+% La cible du lien (ancre) est posée dans le titre lui-même (\phantomsection dans
+% \titleformat{\section} plus bas) : quand le titre passe à la page suivante, son
+% ancre le suit, et le sommaire mène toujours à la bonne page.
+\newcommand{\rapport@section}[1]{\Needspace{8\baselineskip}\addvspace{18pt}\section{#1}}
 \newcommand{\exercice}[2]{\setcounter{section}{\numexpr#1-1\relax}\rapport@section{Exercice #1 : #2}}
 \newcommand{\prerequis}[1]{\setcounter{section}{-1}\rapport@section{Prérequis : #1}}
 
 % ---------------------------------------------------------------- titres
 \titleformat{\chapter}[block]{\normalfont\huge\bfseries\color{accent}}{}{0pt}{}[\vspace{4pt}{\color{accent}\titlerule[1pt]}]
 \titlespacing*{\chapter}{0pt}{-10pt}{16pt}
-\titleformat{\section}{\normalfont\Large\bfseries\color{accent}}{}{0pt}{}
+\titleformat{\section}{\normalfont\Large\bfseries\color{accent}}{}{0pt}{\phantomsection}
 \titlespacing*{\section}{0pt}{0pt}{6pt}
 \titleformat{\subsection}{\normalfont\large\bfseries}{\textcolor{accent}{\thesubsection}}{0.7em}{}
 \titlespacing*{\subsection}{0pt}{14pt}{4pt}
@@ -132,23 +129,24 @@
 
 % ---------------------------------------------------------------- captures
 % \capture{fichier.png}{Une ou deux phrases.}
+% \capture[0.6]{fichier.png}{...}   capture moins large (petite image, aplats)
 % Toutes les captures ont la même règle : pleine largeur, centrées, sans dépasser
 % 58 % de la hauteur de page. Si une capture ne tient pas de peu dans la place
-% qui reste en bas de page, elle est réduite (jusqu'à 75 % de sa hauteur) au lieu
+% qui reste en bas de page, elle est réduite (jusqu'à 70 % de sa hauteur) au lieu
 % de partir à la page suivante en laissant un grand blanc.
 \captionsetup{font=small,labelfont=bf,labelsep=period,justification=centering,skip=5pt,hypcap=false}
 \newsavebox{\rapport@img}
 \newlength{\rapport@reste}
-\newcommand{\capture}[3][]{%
+\newcommand{\capture}[3][1]{%
   % pénalité infinie : pas de coupure entre la capture et ce qui l'annonce, et
   % \pagetotal est à jour pour mesurer la place qui reste
   \par\penalty\@M\medskip
-  \sbox{\rapport@img}{\includegraphics[width=\dimexpr\linewidth-0.8pt\relax,height=0.58\textheight,keepaspectratio]{#2}}%
+  \sbox{\rapport@img}{\includegraphics[width=\dimexpr#1\linewidth-0.8pt\relax,height=0.58\textheight,keepaspectratio]{#2}}%
   \ifdim\pagegoal<\maxdimen
     \setlength{\rapport@reste}{\dimexpr\pagegoal-\pagetotal-3\baselineskip\relax}%
     \ifdim\ht\rapport@img>\rapport@reste
       \ifdim\rapport@reste>0.7\ht\rapport@img
-        \sbox{\rapport@img}{\includegraphics[width=\dimexpr\linewidth-0.8pt\relax,height=\rapport@reste,keepaspectratio]{#2}}%
+        \sbox{\rapport@img}{\includegraphics[width=\dimexpr#1\linewidth-0.8pt\relax,height=\rapport@reste,keepaspectratio]{#2}}%
       \fi
     \fi
   \fi
@@ -166,10 +164,29 @@
 % \end{commandes}
 % Caractères spéciaux échappés (\$, \#, \%, \_, \{, \}, \textbackslash{}) ;
 % une commande trop longue continue sur la ligne suivante, comme du texte.
-\newenvironment{commandes}%
-  {\begin{itemize}[nosep, topsep=3pt, partopsep=0pt, beginpenalty=10000, after=\vspace{2pt}]\raggedright}%
-  {\end{itemize}}
-\newcommand{\cmd}[1]{\item \texttt{#1}}
+% Pas de saut de page dans une liste de moins de 5 commandes ; dans une plus
+% longue, jamais une commande seule en haut ou en bas de page. La liste reste
+% collée à la phrase qui l'annonce ; après elle, un saut de page reste possible
+% (le coller aussi à la capture qui suit laissait de grands blancs).
+% La liste est d'abord parcourue une fois, sans rien afficher, pour compter ses
+% commandes.
+\newcount\rapport@ncmd
+\newcount\rapport@icmd
+\NewDocumentEnvironment{commandes}{+b}%
+  {\global\rapport@ncmd\z@
+   \setbox\z@\vbox{\def\cmd##1{\global\advance\rapport@ncmd\@ne}#1}%
+   \global\rapport@icmd\z@
+   \begin{itemize}[nosep, topsep=3pt, partopsep=0pt, beginpenalty=10000, after=\vspace{2pt}]\raggedright
+   #1
+   \end{itemize}}%
+  {}
+\newcommand{\cmd}[1]{%
+  \global\advance\rapport@icmd\@ne
+  \ifnum\rapport@ncmd<5 \@itempenalty\@M
+  \else\ifnum\rapport@icmd=\tw@ \@itempenalty\@M
+  \else\ifnum\rapport@icmd=\rapport@ncmd \@itempenalty\@M
+  \else \@itempenalty\z@ \fi\fi\fi
+  \item \texttt{#1}}
 
 % ---------------------------------------------------------------- fichiers
 % \begin{fichier} ... \end{fichier}          extrait YAML

@@ -63,15 +63,18 @@ J'ai recréé la base sur un réseau \code{mfp-net}, partagé avec le serveur.
 \begin{commandes}
   \cmd{docker rm -f mfp-server}
   \cmd{docker run -d --name mfp-server --network mfp-net -e DB\_HOST=mfp-db -p 3000:3000 mfp-server}
-  \cmd{docker ps}
-  \cmd{docker logs mfp-server}
 \end{commandes}
-
-\capture{td1-05-server-docker-logs.png}{Le serveur crée les tables \code{user} et \code{address} dans \code{mfp-db} et démarre.}
 
 La base étant neuve, j'ai recréé l'utilisateur dans Bruno avant de me connecter.
 
 \capture{td1-06-login-docker.png}{La connexion au serveur dans Docker renvoie un token.}
+
+\begin{commandes}
+  \cmd{docker ps}
+  \cmd{docker logs mfp-server}
+\end{commandes}
+
+\capture{td1-05-server-docker-logs.png}{Le serveur crée les tables \code{address} et \code{user} dans \code{mfp-db}, démarre, puis reçoit les requêtes de Bruno.}
 
 % ---------------------------------------------------------------- 1.3
 \subsection{Créer un compose.yml pour le serveur et la BDD}
@@ -122,7 +125,7 @@ target: process.env.API_URL || "http://localhost:3000",
 
 \capture{td1-07-client-docker.png}{\code{mfp-db}, \code{mfp-server} et \code{mfp-client} sont \code{Up}, Vite écoute sur le port 5173.}
 
-\capture{td1-08-client-browser.png}{Connexion réussie sur \code{localhost:5173} avec le compte créé dans Bruno.}
+\capture[0.6]{td1-08-client-browser.png}{Connexion réussie sur \code{localhost:5173} avec le compte créé dans Bruno.}
 
 \subsubsection{Ajout au compose.yml et lancement}
 
@@ -146,14 +149,11 @@ J'ai supprimé les conteneurs lancés à la main, qui occupaient encore les port
   \cmd{docker compose logs server}
 \end{commandes}
 
-\probleme{avec un simple \code{depends_on}, le serveur s'arrêtait sur \code{ECONNREFUSED}, parce qu'il démarrait avant PostgreSQL. J'ai ajouté le healthcheck de la question 2.1, puis j'ai relancé.}
+\probleme{au premier essai, avec un simple \code{depends_on}, le serveur s'arrêtait sur \code{ECONNREFUSED}, parce qu'il démarrait avant PostgreSQL. J'ai ajouté le healthcheck de la question 2.1, puis j'ai relancé ces trois commandes.}
 
-\begin{commandes}
-  \cmd{docker compose up -d}
-  \cmd{docker compose logs server}
-\end{commandes}
+\capture{td1-09-compose-up.png}{\code{mfp-db-1} est \code{Healthy} avant le démarrage du serveur, et les 3 services sont \code{Up}.}
 
-\capture{td1-09-compose-up.png}{Le serveur attend que \code{mfp-db-1} soit \code{Healthy}, puis se connecte à la base.}
+\capture{td1-09b-compose-logs.png}{Le serveur se connecte à la base, crée les tables, puis démarre sur le port 3000.}
 
 Le volume étant neuf, j'ai recréé l'utilisateur avec Bruno, et la connexion sur le port 5173 a marché. Ensuite, j'ai mis le nom \code{db} en dur dans \code{datasource.ts}, à la place des variables.
 
@@ -178,15 +178,12 @@ Le volume étant neuf, j'ai recréé l'utilisateur avec Bruno, et la connexion s
 Ajouté pendant la question 1.4, après le plantage du serveur.
 
 \begin{fichier}
-services:
   db:
-    # ...
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 2s
       # ...
   server:
-    # ...
     depends_on:
       db:
         condition: service_healthy
@@ -212,10 +209,11 @@ Pour vérifier, j'ai arrêté le serveur moi-même de deux façons. Quand j'ai t
 FROM node:24-alpine3.24 AS deps
 # ...
 FROM node:24-alpine3.24 AS builder
+WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 # ...
 FROM node:24-alpine3.24 AS main
-# ...
+WORKDIR /app
 COPY --from=builder /app/dist ./dist
 COPY package.json yarn.lock ./
 RUN yarn install --frozen-lockfile --production && yarn cache clean
